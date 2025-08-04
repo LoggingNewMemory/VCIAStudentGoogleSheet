@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Student Spreadsheet Manager</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 20px; 
+            text-align: center; 
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        h1 { color: #333; margin-bottom: 30px; }
+        button { 
+            font-size: 16px; 
+            padding: 12px 24px; 
+            cursor: pointer; 
+            border-radius: 8px;
+            border: none;
+            color: white;
+            margin: 10px;
+            transition: background-color 0.3s, opacity 0.3s;
+        }
+        button:hover:not(:disabled) {
+            opacity: 0.8;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        #login-btn { background-color: #4285F4; }
+        #logout-btn { 
+            background-color: #dc3545; 
+            display: none; 
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+        #test-btn { background-color: #FF9800; }
+        #process-btn { background-color: #34A853; }
+        #submit-code-btn { background-color: #EA4335; }
+        #status { 
+            margin-top: 25px; 
+            font-weight: bold; 
+            font-size: 18px; 
+            min-height: 25px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .auth-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .auth-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .user-status {
+            font-size: 14px;
+            color: #28a745;
+            font-weight: normal;
+        }
+        .code-input-section {
+            display: none;
+            margin-top: 20px;
+        }
+        .spreadsheet-section {
+            display: none;
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #auth-code-input, #spreadsheet-id-input {
+            width: 400px;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            margin: 10px;
+            max-width: 90%;
+        }
+        .instructions {
+            font-size: 14px;
+            color: #666;
+            margin: 10px 0;
+            text-align: left;
+        }
+        .spreadsheet-info {
+            background-color: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: left;
+            display: none;
+        }
+        .error-info {
+            background-color: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: left;
+            display: none;
+        }
+        .input-section {
+            margin: 15px 0;
+        }
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        .auto-save-notice {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+            margin-top: 5px;
+        }
+        .session-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 12px;
+            background-color: #28a745;
+            color: white;
+            border-radius: 20px;
+            font-size: 12px;
+            display: none;
+        }
+        .session-indicator.offline {
+            background-color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="session-indicator" id="session-indicator">● Offline</div>
+    
+    <h1>Student Spreadsheet Manager</h1>
+    
+    <div class="auth-section" id="auth-section">
+        <div class="auth-header">
+            <button id="login-btn">Login with Google</button>
+            <button id="logout-btn">Logout</button>
+            <div class="user-status" id="user-status"></div>
+        </div>
+        
+        <div class="code-input-section" id="code-input-section">
+            <div class="instructions">
+                <strong>Instructions:</strong>
+                <ol>
+                    <li>A browser window will open with Google's authorization page</li>
+                    <li>Sign in and grant permissions</li>
+                    <li>Copy the authorization code from the success page</li>
+                    <li>Paste it in the field below and click "Submit Code"</li>
+                </ol>
+            </div>
+            <input type="text" id="auth-code-input" placeholder="Paste authorization code here..." />
+            <br>
+            <button id="submit-code-btn">Submit Authorization Code</button>
+        </div>
+    </div>
+    
+    <div class="spreadsheet-section" id="spreadsheet-section">
+        <h3>Spreadsheet Configuration</h3>
+        
+        <div class="input-section">
+            <label class="input-label" for="spreadsheet-id-input">Google Sheets ID:</label>
+            <div class="instructions">
+                You can find this in the URL of your Google Sheet:<br>
+                <code>https://docs.google.com/spreadsheets/d/<strong>YOUR_SHEET_ID</strong>/edit</code>
+            </div>
+            <input type="text" id="spreadsheet-id-input" placeholder="Enter Google Sheets ID" />
+            <div class="auto-save-notice">✓ Automatically saved as you type</div>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <button id="test-btn">Test Spreadsheet Access</button>
+            <button id="process-btn">Process Student Ages</button>
+        </div>
+        
+        <div class="spreadsheet-info" id="spreadsheet-info">
+            <h4>Spreadsheet Information:</h4>
+            <div id="spreadsheet-details"></div>
+        </div>
+        
+        <div class="error-info" id="error-info">
+            <h4>Error:</h4>
+            <div id="error-details"></div>
+        </div>
+    </div>
+    
+    <div id="status">Loading...</div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>
