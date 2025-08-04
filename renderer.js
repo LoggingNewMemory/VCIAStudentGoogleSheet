@@ -14,8 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorInfo = document.getElementById('error-info');
     const errorDetails = document.getElementById('error-details');
     const authSection = document.getElementById('auth-section');
-    const sessionIndicator = document.getElementById('session-indicator');
     const userStatus = document.getElementById('user-status');
+    const proposedMovesDiv = document.getElementById('proposed-moves');
 
     let isAuthenticated = false;
 
@@ -64,7 +64,9 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = 'Testing spreadsheet access...';
         spreadsheetInfo.style.display = 'none';
         errorInfo.style.display = 'none';
+        proposedMovesDiv.innerHTML = ''; // Clear previous moves
         testBtn.disabled = true;
+        processBtn.disabled = true; // Disable until test is successful
         window.electronAPI.testSpreadsheetAccess(spreadsheetId);
     });
 
@@ -76,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         statusDiv.textContent = 'Processing spreadsheet... This may take a moment.';
         processBtn.disabled = true;
+        testBtn.disabled = true;
         window.electronAPI.processSpreadsheet(spreadsheetId);
     });
 
@@ -90,11 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
             codeInputSection.style.display = 'none';
             spreadsheetSection.style.display = 'block';
             userStatus.textContent = '✓ Logged in';
-            sessionIndicator.textContent = '● Online';
-            sessionIndicator.className = 'session-indicator';
-            sessionIndicator.style.display = 'block';
+            processBtn.disabled = true; // Should be disabled initially
             
-            // Restore spreadsheet ID if provided
             if (spreadsheetId) {
                 spreadsheetIdInput.value = spreadsheetId;
             }
@@ -107,11 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
             spreadsheetInfo.style.display = 'none';
             errorInfo.style.display = 'none';
             userStatus.textContent = '';
-            sessionIndicator.textContent = '● Offline';
-            sessionIndicator.className = 'session-indicator offline';
-            sessionIndicator.style.display = 'block';
             
-            // Clear sensitive data from UI
             authCodeInput.value = '';
         }
     }
@@ -123,7 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (data.authenticated) {
             statusDiv.textContent = 'Welcome back! Your previous session has been restored.';
-            // Show a brief welcome message, then return to normal status
             setTimeout(() => {
                 statusDiv.textContent = 'Ready to work with spreadsheets!';
             }, 3000);
@@ -164,12 +159,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         spreadsheetDetails.innerHTML = `
             <strong>Title:</strong> ${data.title}<br>
-            <strong>Type:</strong> ${data.type === 'google-sheets' ? 'Google Sheets' : 'Excel File'}<br>
-            <strong>Available Sheets:</strong><br>
+            <strong>Available Sheets:</strong>
             <ul>
                 ${data.sheets.map(sheet => `<li>${sheet.title} (ID: ${sheet.id})</li>`).join('')}
             </ul>
         `;
+        
+        // Display proposed moves
+        proposedMovesDiv.innerHTML = ''; // Clear previous results
+        if (data.potentialMoves && data.potentialMoves.length > 0) {
+            let movesHtml = '<h4>Proposed Changes:</h4><ul>';
+            data.potentialMoves.forEach(move => {
+                movesHtml += `<li>${move.studentName} (Age ${move.age}) will be moved from <strong>${move.currentSheet}</strong> to <strong>${move.newSheet}</strong></li>`;
+            });
+            movesHtml += '</ul>';
+            proposedMovesDiv.innerHTML = movesHtml;
+            processBtn.disabled = false; // Enable processing
+        } else {
+            proposedMovesDiv.innerHTML = '<h4>No students need to be moved at this time.</h4>';
+            processBtn.disabled = true; // Keep disabled
+        }
+
         spreadsheetInfo.style.display = 'block';
     });
 
@@ -178,22 +188,22 @@ document.addEventListener('DOMContentLoaded', () => {
         testBtn.disabled = false;
         spreadsheetInfo.style.display = 'none';
         
-        errorDetails.textContent = message;
+        if (message.includes('Unsupported file type')) {
+            errorDetails.textContent = 'Excel Format Detected. Please convert to a Google Sheet (File > Save as Google Sheets) and use the new Sheet ID.';
+        } else {
+            errorDetails.textContent = message;
+        }
         errorInfo.style.display = 'block';
     });
 
     window.electronAPI.receiveProcessingComplete((message) => {
-        statusDiv.textContent = 'Processing completed successfully!';
-        processBtn.disabled = false;
-        
-        // Show results in a formatted way
-        const lines = message.split('\n');
-        if (lines.length > 1) {
-            // Multi-line message (like Excel analysis)
-            statusDiv.innerHTML = lines.map(line => line.trim()).filter(line => line).join('<br>');
-        } else {
-            statusDiv.textContent = message;
-        }
+    // Show results in a formatted way, allowing for HTML content
+    const lines = message.split('\n');
+    statusDiv.innerHTML = lines.map(line => line.trim()).filter(line => line).join('<br>');
+    
+    processBtn.disabled = true; // Disable after processing
+    testBtn.disabled = false;
+    spreadsheetInfo.style.display = 'none'; // Hide info to encourage a new test
     });
 
 });

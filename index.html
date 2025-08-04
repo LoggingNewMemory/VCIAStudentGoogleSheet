@@ -132,25 +132,16 @@
             font-style: italic;
             margin-top: 5px;
         }
-        .session-indicator {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 8px 12px;
-            background-color: #28a745;
-            color: white;
-            border-radius: 20px;
-            font-size: 12px;
-            display: none;
+        #proposed-moves {
+            margin-top: 15px;
         }
-        .session-indicator.offline {
-            background-color: #6c757d;
+        #proposed-moves ul {
+            list-style-type: '➔ ';
+            padding-left: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="session-indicator" id="session-indicator">● Offline</div>
-    
     <h1>Student Spreadsheet Manager</h1>
     
     <div class="auth-section" id="auth-section">
@@ -164,10 +155,10 @@
             <div class="instructions">
                 <strong>Instructions:</strong>
                 <ol>
-                    <li>A browser window will open with Google's authorization page</li>
-                    <li>Sign in and grant permissions</li>
-                    <li>Copy the authorization code from the success page</li>
-                    <li>Paste it in the field below and click "Submit Code"</li>
+                    <li>A browser window will open with Google's authorization page.</li>
+                    <li>Sign in and grant permissions.</li>
+                    <li>Copy the authorization code provided.</li>
+                    <li>Paste it in the field below and click "Submit Code".</li>
                 </ol>
             </div>
             <input type="text" id="auth-code-input" placeholder="Paste authorization code here..." />
@@ -197,6 +188,7 @@
         <div class="spreadsheet-info" id="spreadsheet-info">
             <h4>Spreadsheet Information:</h4>
             <div id="spreadsheet-details"></div>
+            <div id="proposed-moves"></div>
         </div>
         
         <div class="error-info" id="error-info">

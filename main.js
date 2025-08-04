@@ -59,12 +59,10 @@ function loadTokens() {
             const tokensData = fs.readFileSync(TOKENS_FILE, 'utf8');
             const tokens = JSON.parse(tokensData);
             
-            // Check if tokens are expired
             if (tokens.expiry_date && tokens.expiry_date > Date.now()) {
                 oAuth2Client.setCredentials(tokens);
                 return true;
             } else if (tokens.refresh_token) {
-                // Try to refresh the token
                 oAuth2Client.setCredentials(tokens);
                 return 'refresh_needed';
             }
@@ -112,7 +110,7 @@ async function refreshAccessToken() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
-    height: 600,
+    height: 700, // Increased height for more content
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -133,27 +131,17 @@ function createWindow() {
     const tokenStatus = loadTokens();
     
     if (tokenStatus === true) {
-      // Valid tokens found
       mainWindow.webContents.send('restore-session', {
         authenticated: true,
         spreadsheetId: config.spreadsheetId || ''
       });
     } else if (tokenStatus === 'refresh_needed') {
-      // Try to refresh token
       const refreshed = await refreshAccessToken();
-      if (refreshed) {
-        mainWindow.webContents.send('restore-session', {
-          authenticated: true,
-          spreadsheetId: config.spreadsheetId || ''
-        });
-      } else {
-        mainWindow.webContents.send('restore-session', {
-          authenticated: false,
-          spreadsheetId: config.spreadsheetId || ''
-        });
-      }
+      mainWindow.webContents.send('restore-session', {
+        authenticated: refreshed,
+        spreadsheetId: config.spreadsheetId || ''
+      });
     } else {
-      // No valid tokens
       mainWindow.webContents.send('restore-session', {
         authenticated: false,
         spreadsheetId: config.spreadsheetId || ''
@@ -197,19 +185,6 @@ function startGoogleAuth() {
     authWindow.loadURL(authUrl);
     authWindow.show();
 
-    async function handleAuthRedirect(url) {
-        const title = authWindow.getTitle();
-        if (title.startsWith('Success code=')) {
-            const code = title.split('=')[1];
-            authWindow.close();
-            await processAuthCode(code);
-        }
-    }
-    
-    authWindow.webContents.on('did-navigate', (event, url) => {
-        handleAuthRedirect(url);
-    });
-
     authWindow.on('closed', () => {
         authWindow = null;
     });
@@ -219,96 +194,65 @@ async function processAuthCode(code) {
     try {
         const { tokens } = await oAuth2Client.getToken(code);
         oAuth2Client.setCredentials(tokens);
-        
-        // Save tokens for future use
         saveTokens(tokens);
-        
         mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
     } catch (error) {
         console.error('Error retrieving access token', error);
-        mainWindow.webContents.send('google-auth-error', 'Error authenticating with Google. Please check the authorization code and try again.');
+        mainWindow.webContents.send('google-auth-error', 'Error authenticating. Please check the authorization code and try again.');
     }
 }
 
-// Handle logout
 ipcMain.on('logout', () => {
     clearTokens();
     oAuth2Client.setCredentials({});
     mainWindow.webContents.send('logout-complete');
 });
 
-// Handle saving spreadsheet ID
 ipcMain.on('save-spreadsheet-id', (event, spreadsheetId) => {
     const config = loadConfig();
     config.spreadsheetId = spreadsheetId;
     saveConfig(config);
 });
 
-ipcMain.on('login-with-google', () => {
-    startGoogleAuth();
-});
+ipcMain.on('login-with-google', startGoogleAuth);
 
 ipcMain.on('submit-auth-code', async (event, code) => {
-    if (authWindow) {
-        authWindow.close();
-        authWindow = null;
-    }
+    if (authWindow) authWindow.close();
     await processAuthCode(code);
 });
 
-// Enhanced function to detect file type and handle only Google Sheets
+// Function to test access and analyze potential moves
 ipcMain.on('test-spreadsheet-access', async (event, fileId) => {
     try {
         const drive = google.drive({ version: 'v3', auth: oAuth2Client });
         
-        console.log(`Testing access to file: ${fileId}`);
-        
-        // Get file metadata to determine type
         const fileResponse = await drive.files.get({
             fileId: fileId,
-            fields: 'id,name,mimeType,size'
+            fields: 'id,name,mimeType',
         });
         
         const file = fileResponse.data;
-        console.log('File info:', {
-            name: file.name,
-            mimeType: file.mimeType,
-            size: file.size
-        });
         
-        let fileInfo = {
-            title: file.name,
-            mimeType: file.mimeType,
-            sheets: []
-        };
-        
-        if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
-            // It's a Google Sheets document
-            const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-            const response = await sheets.spreadsheets.get({
-                spreadsheetId: fileId,
-            });
-            
-            fileInfo.sheets = response.data.sheets.map(sheet => ({
-                title: sheet.properties.title,
-                id: sheet.properties.sheetId
-            }));
-            fileInfo.type = 'google-sheets';
-            
-            // Analyze potential moves
-            const moves = await analyzeStudentMoves(fileId);
-            fileInfo.potentialMoves = moves;
-            
-        } else if (file.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                   file.mimeType === 'application/vnd.ms-excel') {
-            // It's an Excel file - return error
-            fileInfo.type = 'excel';
-            event.sender.send('test-access-excel-detected', fileInfo);
-            return;
-            
-        } else {
+        if (file.mimeType !== 'application/vnd.google-apps.spreadsheet') {
             throw new Error(`Unsupported file type: ${file.mimeType}. Please use a Google Sheets document.`);
         }
+        
+        // It's a Google Sheet, proceed with analysis
+        const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
+        const response = await sheets.spreadsheets.get({
+            spreadsheetId: fileId,
+        });
+        
+        const potentialMoves = await analyzeStudentMoves(fileId);
+        
+        const fileInfo = {
+            title: file.name,
+            sheets: response.data.sheets.map(sheet => ({
+                title: sheet.properties.title,
+                id: sheet.properties.sheetId
+            })),
+            potentialMoves: potentialMoves,
+        };
         
         event.sender.send('test-access-success', fileInfo);
         
@@ -320,8 +264,6 @@ ipcMain.on('test-spreadsheet-access', async (event, fileId) => {
             errorMessage = 'File not found. Please check the file ID.';
         } else if (error.code === 403) {
             errorMessage = 'Access denied. Please make sure the file is shared with your Google account.';
-        } else if (error.code === 400) {
-            errorMessage = 'Invalid request. The file ID might be incorrect.';
         } else if (error.code === 401) {
             errorMessage = 'Authentication expired. Please log in again.';
             clearTokens();
@@ -334,24 +276,46 @@ ipcMain.on('test-spreadsheet-access', async (event, fileId) => {
     }
 });
 
-// Function to analyze potential student moves without actually moving them
+// Main processing function
+ipcMain.on('process-spreadsheet', async (event, spreadsheetId) => {
+    try {
+        const drive = google.drive({ version: 'v3', auth: oAuth2Client });
+        
+        const fileResponse = await drive.files.get({
+            fileId: spreadsheetId,
+            fields: 'mimeType',
+        });
+
+        if (fileResponse.data.mimeType !== 'application/vnd.google-apps.spreadsheet') {
+            throw new Error('Unsupported file type. Only Google Sheets are supported for processing.');
+        }
+
+        await processGoogleSheet(spreadsheetId, event);
+
+    } catch (error) {
+        console.error('Error processing file:', error);
+        let errorMessage = 'An error occurred while processing the file.';
+        if (error.code === 403) {
+            errorMessage = 'Access denied. Ensure you have edit permissions for the sheet.';
+        } else if (error.code === 401) {
+            errorMessage = 'Authentication expired. Please log in again.';
+            clearTokens();
+            mainWindow.webContents.send('auth-expired');
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        event.sender.send('processing-error', errorMessage);
+    }
+});
+
+
 async function analyzeStudentMoves(spreadsheetId) {
     const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
 
-    // Get spreadsheet metadata
-    const sheetMetadata = await sheets.spreadsheets.get({
-        spreadsheetId,
-    });
-
-    console.log('Google Sheets title:', sheetMetadata.data.properties.title);
-
-    // Define a blacklist of sheet names to ignore
+    const sheetMetadata = await sheets.spreadsheets.get({ spreadsheetId });
     const blacklist = ['ALL STUDENTS', 'NEW STUDENTS', 'Sheet4'];
     const availableSheets = sheetMetadata.data.sheets.filter(s => !blacklist.includes(s.properties.title));
 
-    console.log('Available sheets after blacklist:', availableSheets.map(s => s.properties.title));
-
-    // Define sheet progression (from youngest to oldest)
     const sheetProgression = [
         { namePattern: /young ws|young w/i, range: { min: 6, max: 8 }, displayName: 'Young WS' },
         { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 }, displayName: 'WS' },
@@ -361,257 +325,123 @@ async function analyzeStudentMoves(spreadsheetId) {
 
     let potentialMoves = [];
 
-    // Process each sheet in the progression
     for (let i = 0; i < sheetProgression.length; i++) {
         const currentLevel = sheetProgression[i];
-        
-        const currentSheet = availableSheets.find(s => 
-            currentLevel.namePattern.test(s.properties.title)
-        );
-        
-        if (!currentSheet) {
-            console.log(`No sheet found matching pattern: ${currentLevel.namePattern}`);
-            continue;
-        }
-        
+        const currentSheet = availableSheets.find(s => currentLevel.namePattern.test(s.properties.title));
+        if (!currentSheet) continue;
+
         const sheetName = currentSheet.properties.title;
-        const sheetId = currentSheet.properties.sheetId;
-        
-        console.log(`Analyzing sheet: ${sheetName}`);
-        
-        // Get all data from the sheet
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
             range: `${sheetName}!A:Z`,
         });
 
         const rows = response.data.values;
-        if (!rows || rows.length === 0) {
-            console.log(`No data found in sheet: ${sheetName}`);
-            continue;
-        }
+        if (!rows || rows.length === 0) continue;
 
-        // Find header row and required column indices
-        let headerRowIndex = -1;
-        let dobIndex = -1;
-        let nameIndex = -1;
-        
-        for (let j = 0; j < rows.length; j++) {
-            const row = rows[j];
-            if (row && row.includes('DOB')) {
-                headerRowIndex = j;
-                dobIndex = row.indexOf('DOB');
-                // Look for name column (could be 'Name', 'Student Name', 'Full Name', etc.)
-                nameIndex = row.findIndex(cell => 
-                    cell && cell.toLowerCase().includes('name') && !cell.toLowerCase().includes('username')
-                );
-                if (nameIndex === -1) {
-                    nameIndex = 0; // Default to first column if no name column found
-                }
-                break;
-            }
-        }
-        
-        if (dobIndex === -1) {
-            console.log(`No DOB column found in sheet: ${sheetName}`);
-            continue;
-        }
+        let headerRowIndex = rows.findIndex(row => row && row.includes('DOB'));
+        if (headerRowIndex === -1) continue;
 
-        console.log(`Found DOB column at index ${dobIndex}, Name column at index ${nameIndex} in row ${headerRowIndex + 1}`);
+        const dobIndex = rows[headerRowIndex].indexOf('DOB');
+        let nameIndex = rows[headerRowIndex].findIndex(cell => cell && cell.toLowerCase().includes('name') && !cell.toLowerCase().includes('username'));
+        if (nameIndex === -1) nameIndex = 0;
 
-        // Process each student row
         for (let j = headerRowIndex + 1; j < rows.length; j++) {
             const row = rows[j];
             if (!row || !row[dobIndex]) continue;
 
-            // Parse DOB
-            let dob;
-            if (typeof row[dobIndex] === 'string' && row[dobIndex].includes('-')) {
-                const parts = row[dobIndex].split('-');
-                if (parts.length === 3) {
-                    dob = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
-                }
-            } else if (row[dobIndex] instanceof Date) {
-                dob = new Date(row[dobIndex]);
-            } else {
-                dob = new Date(row[dobIndex]);
-            }
-            
-            if (!dob || isNaN(dob.getTime())) {
-                console.log(`Invalid date format for row ${j + 1}: ${row[dobIndex]}`);
-                continue;
-            }
+            const dob = new Date(row[dobIndex]);
+            if (isNaN(dob.getTime())) continue;
 
-            // Calculate age
             const today = new Date();
             let age = today.getFullYear() - dob.getFullYear();
             const m = today.getMonth() - dob.getMonth();
-            if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
-                age--;
-            }
+            if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
 
-            console.log(`Student in row ${j + 1}: age ${age}, current level: ${currentLevel.range.min}-${currentLevel.range.max}`);
-
-            // Check if student has outgrown current level
             if (age > currentLevel.range.max) {
                 let nextLevelIndex = i + 1;
-                while (nextLevelIndex < sheetProgression.length && 
-                       age > sheetProgression[nextLevelIndex].range.max) {
+                while (nextLevelIndex < sheetProgression.length && age > sheetProgression[nextLevelIndex].range.max) {
                     nextLevelIndex++;
                 }
                 
                 if (nextLevelIndex < sheetProgression.length) {
                     const nextLevel = sheetProgression[nextLevelIndex];
-                    const nextSheet = availableSheets.find(s => 
-                        nextLevel.namePattern.test(s.properties.title)
-                    );
+                    const nextSheet = availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
                     
                     if (nextSheet && nextSheet.properties.title !== sheetName) {
-                        const studentName = row[nameIndex] || `Student in row ${j + 1}`;
                         potentialMoves.push({
-                            studentName: studentName,
+                            studentName: row[nameIndex] || `Student in row ${j + 1}`,
                             currentSheet: sheetName,
                             newSheet: nextSheet.properties.title,
-                            currentLevel: currentLevel.displayName,
-                            newLevel: nextLevel.displayName,
                             age: age,
                             rowIndex: j + 1,
-                            studentData: row
+                            studentData: row,
+                            sourceSheetId: currentSheet.properties.sheetId,
                         });
-                        console.log(`Student "${studentName}" (age ${age}) should move from "${sheetName}" to "${nextSheet.properties.title}"`);
                     }
                 }
             }
         }
     }
-
     return potentialMoves;
 }
 
-// Process spreadsheet with confirmation
-ipcMain.on('process-spreadsheet', async (event, customFileId) => {
-    try {
-        const drive = google.drive({ version: 'v3', auth: oAuth2Client });
-        const fileId = customFileId || ' ';
-        
-        console.log(`Processing file: ${fileId}`);
-
-        // Get file metadata
-        const fileResponse = await drive.files.get({
-            fileId: fileId,
-            fields: 'id,name,mimeType'
-        });
-        
-        const file = fileResponse.data;
-        
-        if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
-            // Process as Google Sheets
-            await processGoogleSheet(fileId, event);
-        } else {
-            throw new Error(`Unsupported file type: ${file.mimeType}. Only Google Sheets are supported.`);
-        }
-        
-    } catch (error) {
-        console.error('Error processing file:', error);
-        
-        let errorMessage = 'An error occurred while processing the file.';
-        if (error.code === 404) {
-            errorMessage = 'File not found. Please check the file ID.';
-        } else if (error.code === 403) {
-            errorMessage = 'Access denied. Please make sure the file is shared with your Google account and you have edit permissions.';
-        } else if (error.code === 401) {
-            errorMessage = 'Authentication expired. Please log in again.';
-            clearTokens();
-            mainWindow.webContents.send('auth-expired');
-        } else if (error.message) {
-            errorMessage = error.message;
-        }
-        
-        event.sender.send('processing-error', errorMessage);
-    }
-});
-
 async function processGoogleSheet(spreadsheetId, event) {
     const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-
-    // Get the moves that were previously analyzed
     const moves = await analyzeStudentMoves(spreadsheetId);
-    
-    let totalMoved = 0;
+    let movedStudentsSummary = [];
+    let errors = [];
 
-    // Process each move
+    // Process moves in reverse order of row index to avoid shifting issues
+    moves.sort((a, b) => b.rowIndex - a.rowIndex);
+
     for (const move of moves) {
         try {
-            // First, find the target sheet and get its current data to determine where to insert
-            const targetSheetResponse = await sheets.spreadsheets.values.get({
+            // Append data to the new sheet
+            await sheets.spreadsheets.values.append({
                 spreadsheetId,
-                range: `${move.newSheet}!A:Z`,
-            });
-
-            const targetRows = targetSheetResponse.data.values || [];
-            
-            // Find the last row with data
-            let lastRowWithData = 0;
-            for (let i = targetRows.length - 1; i >= 0; i--) {
-                if (targetRows[i] && targetRows[i].some(cell => cell && cell.trim() !== '')) {
-                    lastRowWithData = i + 1; // Convert to 1-based indexing
-                    break;
-                }
-            }
-            
-            // If no data found, assume data starts from row 2 (after headers)
-            if (lastRowWithData === 0) {
-                lastRowWithData = 1;
-            }
-            
-            const insertRow = lastRowWithData + 1;
-            
-            console.log(`Inserting student "${move.studentName}" at row ${insertRow} in sheet "${move.newSheet}"`);
-
-            // Append to new sheet at the correct position
-            await sheets.spreadsheets.values.update({
-                spreadsheetId,
-                range: `${move.newSheet}!A${insertRow}:Z${insertRow}`,
+                range: move.newSheet, // Append to the table in this sheet
                 valueInputOption: 'USER_ENTERED',
+                insertDataOption: 'INSERT_ROWS',
                 resource: {
                     values: [move.studentData],
                 },
             });
 
-            // Get the current sheet metadata to find the sheet ID
-            const sheetMetadata = await sheets.spreadsheets.get({
+            // Delete the original row
+            await sheets.spreadsheets.batchUpdate({
                 spreadsheetId,
+                resource: {
+                    requests: [{
+                        deleteDimension: {
+                            range: {
+                                sheetId: move.sourceSheetId,
+                                dimension: 'ROWS',
+                                startIndex: move.rowIndex - 1,
+                                endIndex: move.rowIndex,
+                            },
+                        },
+                    }],
+                },
             });
-            
-            const currentSheetObj = sheetMetadata.data.sheets.find(s => 
-                s.properties.title === move.currentSheet
-            );
-            
-            if (currentSheetObj) {
-                // Delete from old sheet
-                await sheets.spreadsheets.batchUpdate({
-                    spreadsheetId,
-                    resource: {
-                        requests: [{
-                            deleteDimension: {
-                                range: {
-                                    sheetId: currentSheetObj.properties.sheetId,
-                                    dimension: 'ROWS',
-                                    startIndex: move.rowIndex - 1,
-                                    endIndex: move.rowIndex
-                                }
-                            }
-                        }]
-                    }
-                });
-            }
-            
-            totalMoved++;
-            console.log(`✓ Moved "${move.studentName}" (age ${move.age}) from "${move.currentSheet}" to "${move.newSheet}"`);
+
+            const summaryLine = `✓ Moved <strong>${move.studentName}</strong> from ${move.currentSheet} to ${move.newSheet}`;
+            movedStudentsSummary.push(summaryLine);
+            console.log(`✓ Moved "${move.studentName}" from "${move.currentSheet}" to "${move.newSheet}"`);
         } catch (moveError) {
             console.error(`✗ Error moving student "${move.studentName}":`, moveError.message);
+            errors.push(move.studentName);
         }
     }
     
-    event.sender.send('processing-complete', `Google Sheets processing complete! Moved ${totalMoved} students.`);
+    let completionMessage = `Processing complete! Moved ${movedStudentsSummary.length} students.`;
+    if (movedStudentsSummary.length > 0) {
+        completionMessage += `\n\n<strong>Summary of Changes:</strong>\n${movedStudentsSummary.join('\n')}`;
+    }
+
+    if (errors.length > 0) {
+        completionMessage += `\n\nFailed to move: ${errors.join(', ')}.`;
+    }
+    
+    event.sender.send('processing-complete', completionMessage);
 }
