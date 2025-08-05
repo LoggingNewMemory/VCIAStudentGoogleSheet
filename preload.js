@@ -17,11 +17,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     receiveTestAccessSuccess: (callback) => ipcRenderer.on('test-access-success', (event, data) => callback(data)),
     receiveTestAccessError: (callback) => ipcRenderer.on('test-access-error', (event, message) => callback(message)),
+    receiveTestAccessExcelDetected: (callback) => ipcRenderer.on('test-access-excel-detected', (event, data) => callback(data)),
     
     receiveProcessingComplete: (callback) => ipcRenderer.on('processing-complete', (event, message) => callback(message)),
     receiveProcessingError: (callback) => ipcRenderer.on('processing-error', (event, message) => callback(message)),
     
-    // New event listeners for session management
+    // Session management event listeners
     receiveRestoreSession: (callback) => ipcRenderer.on('restore-session', (event, data) => callback(data)),
     receiveLogoutComplete: (callback) => ipcRenderer.on('logout-complete', (event) => callback()),
     receiveAuthExpired: (callback) => ipcRenderer.on('auth-expired', (event) => callback()),

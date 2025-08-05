@@ -41,6 +41,14 @@
         #test-btn { background-color: #FF9800; }
         #process-btn { background-color: #34A853; }
         #submit-code-btn { background-color: #EA4335; }
+        #confirm-btn { 
+            background-color: #28a745; 
+            display: none; 
+        }
+        #cancel-btn { 
+            background-color: #6c757d; 
+            display: none; 
+        }
         #status { 
             margin-top: 25px; 
             font-weight: bold; 
@@ -117,6 +125,44 @@
             text-align: left;
             display: none;
         }
+        .warning-info {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: left;
+            display: none;
+        }
+        .moves-preview {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: left;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .move-item {
+            padding: 8px;
+            border-bottom: 1px solid #e9ecef;
+            background-color: white;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .move-item:last-child {
+            border-bottom: none;
+        }
+        .confirmation-section {
+            display: none;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid #007bff;
+        }
         .input-section {
             margin: 15px 0;
         }
@@ -131,13 +177,6 @@
             color: #666;
             font-style: italic;
             margin-top: 5px;
-        }
-        #proposed-moves {
-            margin-top: 15px;
-        }
-        #proposed-moves ul {
-            list-style-type: '➔ ';
-            padding-left: 20px;
         }
     </style>
 </head>
@@ -155,10 +194,10 @@
             <div class="instructions">
                 <strong>Instructions:</strong>
                 <ol>
-                    <li>A browser window will open with Google's authorization page.</li>
-                    <li>Sign in and grant permissions.</li>
-                    <li>Copy the authorization code provided.</li>
-                    <li>Paste it in the field below and click "Submit Code".</li>
+                    <li>A browser window will open with Google's authorization page</li>
+                    <li>Sign in and grant permissions</li>
+                    <li>Copy the authorization code from the success page</li>
+                    <li>Paste it in the field below and click "Submit Code"</li>
                 </ol>
             </div>
             <input type="text" id="auth-code-input" placeholder="Paste authorization code here..." />
@@ -182,23 +221,283 @@
         
         <div style="margin: 20px 0;">
             <button id="test-btn">Test Spreadsheet Access</button>
-            <button id="process-btn">Process Student Ages</button>
+            <button id="process-btn" style="display: none;">Process Student Ages</button>
         </div>
         
         <div class="spreadsheet-info" id="spreadsheet-info">
             <h4>Spreadsheet Information:</h4>
             <div id="spreadsheet-details"></div>
-            <div id="proposed-moves"></div>
+        </div>
+        
+        <div class="warning-info" id="warning-info">
+            <h4>⚠️ Excel Format Detected</h4>
+            <div>Please convert to Google Sheet Format (File > Save as Google Sheets)</div>
         </div>
         
         <div class="error-info" id="error-info">
             <h4>Error:</h4>
             <div id="error-details"></div>
         </div>
+        
+        <div class="moves-preview" id="moves-preview">
+            <h4>Proposed Student Moves:</h4>
+            <div id="moves-list"></div>
+        </div>
+        
+        <div class="confirmation-section" id="confirmation-section">
+            <h4>⚠️ Confirm Changes</h4>
+            <p>The following students will be moved to their appropriate age groups. This action cannot be undone.</p>
+            <div style="margin: 15px 0;">
+                <button id="confirm-btn">Confirm and Process</button>
+                <button id="cancel-btn">Cancel</button>
+            </div>
+        </div>
     </div>
     
     <div id="status">Loading...</div>
 
-    <script src="./renderer.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginBtn = document.getElementById('login-btn');
+            const logoutBtn = document.getElementById('logout-btn');
+            const testBtn = document.getElementById('test-btn');
+            const processBtn = document.getElementById('process-btn');
+            const confirmBtn = document.getElementById('confirm-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const statusDiv = document.getElementById('status');
+            const codeInputSection = document.getElementById('code-input-section');
+            const spreadsheetSection = document.getElementById('spreadsheet-section');
+            const authCodeInput = document.getElementById('auth-code-input');
+            const spreadsheetIdInput = document.getElementById('spreadsheet-id-input');
+            const submitCodeBtn = document.getElementById('submit-code-btn');
+            const spreadsheetInfo = document.getElementById('spreadsheet-info');
+            const spreadsheetDetails = document.getElementById('spreadsheet-details');
+            const warningInfo = document.getElementById('warning-info');
+            const errorInfo = document.getElementById('error-info');
+            const errorDetails = document.getElementById('error-details');
+            const movesPreview = document.getElementById('moves-preview');
+            const movesList = document.getElementById('moves-list');
+            const confirmationSection = document.getElementById('confirmation-section');
+            const userStatus = document.getElementById('user-status');
+
+            let isAuthenticated = false;
+            let pendingMoves = [];
+
+            // Auto-save spreadsheet ID when it changes
+            spreadsheetIdInput.addEventListener('input', () => {
+                window.electronAPI.saveSpreadsheetId(spreadsheetIdInput.value.trim());
+            });
+
+            loginBtn.addEventListener('click', () => {
+                statusDiv.textContent = 'Opening Google login...';
+                codeInputSection.style.display = 'block';
+                loginBtn.style.display = 'none';
+                window.electronAPI.loginWithGoogle();
+            });
+
+            logoutBtn.addEventListener('click', () => {
+                statusDiv.textContent = 'Logging out...';
+                window.electronAPI.logout();
+            });
+
+            submitCodeBtn.addEventListener('click', () => {
+                const authCode = authCodeInput.value.trim();
+                if (!authCode) {
+                    statusDiv.textContent = 'Please enter the authorization code.';
+                    return;
+                }
+                
+                statusDiv.textContent = 'Processing authorization code...';
+                submitCodeBtn.disabled = true;
+                window.electronAPI.submitAuthCode(authCode);
+            });
+
+            authCodeInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    submitCodeBtn.click();
+                }
+            });
+
+            testBtn.addEventListener('click', () => {
+                const spreadsheetId = spreadsheetIdInput.value.trim();
+                if (!spreadsheetId) {
+                    statusDiv.textContent = 'Please enter a spreadsheet ID.';
+                    return;
+                }
+                statusDiv.textContent = 'Testing spreadsheet access...';
+                hideAllMessages();
+                testBtn.disabled = true;
+                window.electronAPI.testSpreadsheetAccess(spreadsheetId);
+            });
+
+            confirmBtn.addEventListener('click', () => {
+                const spreadsheetId = spreadsheetIdInput.value.trim();
+                statusDiv.textContent = 'Processing spreadsheet... This may take a moment.';
+                confirmBtn.disabled = true;
+                confirmationSection.style.display = 'none';
+                processBtn.style.display = 'none';
+                window.electronAPI.processSpreadsheet(spreadsheetId);
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                confirmationSection.style.display = 'none';
+                processBtn.style.display = 'inline-block';
+                statusDiv.textContent = 'Operation cancelled.';
+            });
+
+            processBtn.addEventListener('click', () => {
+                if (pendingMoves.length === 0) {
+                    statusDiv.textContent = 'No moves to process.';
+                    return;
+                }
+                confirmationSection.style.display = 'block';
+                processBtn.style.display = 'none';
+            });
+
+            function hideAllMessages() {
+                spreadsheetInfo.style.display = 'none';
+                warningInfo.style.display = 'none';
+                errorInfo.style.display = 'none';
+                movesPreview.style.display = 'none';
+                confirmationSection.style.display = 'none';
+            }
+
+            function updateUI(authenticated, spreadsheetId = '') {
+                isAuthenticated = authenticated;
+                
+                if (authenticated) {
+                    statusDiv.textContent = 'Ready to work with spreadsheets!';
+                    loginBtn.style.display = 'none';
+                    logoutBtn.style.display = 'inline-block';
+                    codeInputSection.style.display = 'none';
+                    spreadsheetSection.style.display = 'block';
+                    userStatus.textContent = '✓ Logged in';
+                    
+                    if (spreadsheetId) {
+                        spreadsheetIdInput.value = spreadsheetId;
+                    }
+                } else {
+                    statusDiv.textContent = 'Please log in to continue.';
+                    loginBtn.style.display = 'inline-block';
+                    logoutBtn.style.display = 'none';
+                    codeInputSection.style.display = 'none';
+                    spreadsheetSection.style.display = 'none';
+                    hideAllMessages();
+                    userStatus.textContent = '';
+                    authCodeInput.value = '';
+                }
+            }
+
+            // Event listeners for electron API
+            window.electronAPI.receiveRestoreSession((data) => {
+                updateUI(data.authenticated, data.spreadsheetId);
+                if (data.authenticated) {
+                    statusDiv.textContent = 'Welcome back! Your previous session has been restored.';
+                    setTimeout(() => {
+                        statusDiv.textContent = 'Ready to work with spreadsheets!';
+                    }, 3000);
+                }
+            });
+
+            window.electronAPI.receiveGoogleAuthSuccess((message) => {
+                statusDiv.textContent = message;
+                updateUI(true, spreadsheetIdInput.value);
+            });
+
+            window.electronAPI.receiveGoogleAuthError((message) => {
+                statusDiv.textContent = `Error: ${message}`;
+                submitCodeBtn.disabled = false;
+                loginBtn.style.display = 'block';
+                codeInputSection.style.display = 'none';
+            });
+
+            window.electronAPI.receiveLogoutComplete(() => {
+                statusDiv.textContent = 'Successfully logged out.';
+                updateUI(false);
+            });
+
+            window.electronAPI.receiveAuthExpired(() => {
+                statusDiv.textContent = 'Your session has expired. Please log in again.';
+                updateUI(false);
+            });
+
+            window.electronAPI.receiveTestAccessSuccess((data) => {
+                statusDiv.textContent = 'Spreadsheet access test successful!';
+                testBtn.disabled = false;
+                hideAllMessages();
+                
+                spreadsheetDetails.innerHTML = `
+                    <strong>Title:</strong> ${data.title}<br>
+                    <strong>Type:</strong> Google Sheets<br>
+                    <strong>Available Sheets:</strong><br>
+                    <ul>
+                        ${data.sheets.map(sheet => `<li>${sheet.title}</li>`).join('')}
+                    </ul>
+                `;
+                spreadsheetInfo.style.display = 'block';
+
+                // Show moves preview if any moves are found
+                if (data.potentialMoves && data.potentialMoves.length > 0) {
+                    pendingMoves = data.potentialMoves;
+                    let movesHtml = '';
+                    
+                    data.potentialMoves.forEach(move => {
+                        movesHtml += `
+                            <div class="move-item">
+                                <strong>${move.studentName}</strong> (Age ${move.age})<br>
+                                Moving from: <em>${move.currentSheet}</em> → <em>${move.newSheet}</em>
+                            </div>
+                        `;
+                    });
+                    
+                    movesList.innerHTML = movesHtml;
+                    movesPreview.style.display = 'block';
+                    processBtn.style.display = 'inline-block';
+                    
+                    statusDiv.innerHTML = `Found ${data.potentialMoves.length} student(s) ready to move to appropriate age groups.`;
+                } else {
+                    pendingMoves = [];
+                    processBtn.style.display = 'none';
+                    statusDiv.textContent = 'All students are in appropriate age groups!';
+                }
+            });
+
+            window.electronAPI.receiveTestAccessExcelDetected((data) => {
+                statusDiv.textContent = 'Excel format detected.';
+                testBtn.disabled = false;
+                hideAllMessages();
+                warningInfo.style.display = 'block';
+            });
+
+            window.electronAPI.receiveTestAccessError((message) => {
+                statusDiv.textContent = 'Spreadsheet access test failed.';
+                testBtn.disabled = false;
+                hideAllMessages();
+                errorDetails.textContent = message;
+                errorInfo.style.display = 'block';
+            });
+
+            window.electronAPI.receiveProcessingComplete((message) => {
+                statusDiv.textContent = 'Processing completed successfully!';
+                confirmBtn.disabled = false;
+                processBtn.style.display = 'none';
+                hideAllMessages();
+                
+                // Clear pending moves and refresh
+                pendingMoves = [];
+                statusDiv.textContent = message;
+            });
+
+            window.electronAPI.receiveProcessingError((message) => {
+                statusDiv.textContent = 'Processing failed.';
+                confirmBtn.disabled = false;
+                processBtn.style.display = 'inline-block';
+                confirmationSection.style.display = 'none';
+                hideAllMessages();
+                errorDetails.textContent = message;
+                errorInfo.style.display = 'block';
+            });
+        });
+    </script>
 </body>
 </html>
