@@ -31,6 +31,8 @@
             opacity: 0.6;
             cursor: not-allowed;
         }
+        a { color: #007bff; }
+        a:hover { color: #0056b3; }
         #login-btn { background-color: #4285F4; }
         #logout-btn { 
             background-color: #dc3545; 
@@ -40,11 +42,6 @@
         }
         #test-btn { background-color: #FF9800; }
         #process-btn { background-color: #34A853; }
-        #revert-btn {
-            background-color: #ffc107;
-            color: #212529;
-            display: none;
-        }
         #submit-code-btn { background-color: #EA4335; }
         #status { 
             margin-top: 25px; 
@@ -76,7 +73,7 @@
             color: #28a745;
             font-weight: normal;
         }
-        .code-input-section, .spreadsheet-section, .revert-section {
+        .code-input-section, .spreadsheet-section {
             display: none;
         }
         #auth-code-input, #spreadsheet-id-input {
@@ -96,7 +93,7 @@
         }
         .info-box {
             border-radius: 4px;
-            padding: 10px;
+            padding: 10px 20px;
             margin: 10px 0;
             text-align: left;
             display: none;
@@ -113,7 +110,6 @@
             padding: 15px;
             margin: 15px 0;
             text-align: left;
-            display: none;
             max-height: 300px;
             overflow-y: auto;
         }
@@ -177,254 +173,16 @@
         <div class="info-box spreadsheet-info" id="spreadsheet-info"></div>
         <div class="info-box warning-info" id="warning-info"></div>
         <div class="info-box error-info" id="error-info"></div>
+        <div class="info-box revert-info" id="post-processing-info"></div>
         
-        <div class="moves-preview" id="moves-preview">
+        <div class="moves-preview" id="moves-preview" style="display:none;">
             <h4>Proposed Student Moves:</h4>
             <div id="moves-list"></div>
-        </div>
-        
-        <div class="revert-section" id="revert-section">
-             <div class="info-box revert-info" id="revert-info" style="display: block;">
-                <p id="revert-message"></p>
-                <button id="revert-btn">Revert Last Change</button>
-            </div>
         </div>
     </div>
     
     <div id="status">Loading...</div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Element Constants
-            const loginBtn = document.getElementById('login-btn');
-            const logoutBtn = document.getElementById('logout-btn');
-            const testBtn = document.getElementById('test-btn');
-            const processBtn = document.getElementById('process-btn');
-            const revertBtn = document.getElementById('revert-btn');
-            const statusDiv = document.getElementById('status');
-            const codeInputSection = document.getElementById('code-input-section');
-            const spreadsheetSection = document.getElementById('spreadsheet-section');
-            const authCodeInput = document.getElementById('auth-code-input');
-            const spreadsheetIdInput = document.getElementById('spreadsheet-id-input');
-            const submitCodeBtn = document.getElementById('submit-code-btn');
-            const spreadsheetInfo = document.getElementById('spreadsheet-info');
-            const warningInfo = document.getElementById('warning-info');
-            const errorInfo = document.getElementById('error-info');
-            const movesPreview = document.getElementById('moves-preview');
-            const movesList = document.getElementById('moves-list');
-            const userStatus = document.getElementById('user-status');
-            const revertSection = document.getElementById('revert-section');
-            const revertMessage = document.getElementById('revert-message');
-            
-            let pendingMoves = [];
-
-            // --- Utility Functions ---
-            function hideAllInfoBoxes() {
-                spreadsheetInfo.style.display = 'none';
-                warningInfo.style.display = 'none';
-                errorInfo.style.display = 'none';
-                movesPreview.style.display = 'none';
-                revertSection.style.display = 'none';
-            }
-
-            function updateUI(authenticated, spreadsheetId = '') {
-                if (authenticated) {
-                    loginBtn.style.display = 'none';
-                    logoutBtn.style.display = 'inline-block';
-                    codeInputSection.style.display = 'none';
-                    spreadsheetSection.style.display = 'block';
-                    userStatus.textContent = '✓ Logged in';
-                    statusDiv.textContent = 'Ready to work with spreadsheets!';
-                    if (spreadsheetId) {
-                        spreadsheetIdInput.value = spreadsheetId;
-                    }
-                } else {
-                    loginBtn.style.display = 'inline-block';
-                    logoutBtn.style.display = 'none';
-                    spreadsheetSection.style.display = 'none';
-                    userStatus.textContent = '';
-                    authCodeInput.value = '';
-                    hideAllInfoBoxes();
-                    statusDiv.textContent = 'Please log in to continue.';
-                }
-            }
-            
-            // --- Event Listeners ---
-            spreadsheetIdInput.addEventListener('input', () => {
-                window.electronAPI.saveSpreadsheetId(spreadsheetIdInput.value.trim());
-            });
-
-            loginBtn.addEventListener('click', () => {
-                statusDiv.textContent = 'Opening Google login...';
-                codeInputSection.style.display = 'block';
-                loginBtn.style.display = 'none';
-                window.electronAPI.loginWithGoogle();
-            });
-
-            logoutBtn.addEventListener('click', () => {
-                statusDiv.textContent = 'Logging out...';
-                window.electronAPI.logout();
-            });
-
-            submitCodeBtn.addEventListener('click', () => {
-                const authCode = authCodeInput.value.trim();
-                if (!authCode) {
-                    statusDiv.textContent = 'Please enter the authorization code.';
-                    return;
-                }
-                statusDiv.textContent = 'Processing authorization code...';
-                submitCodeBtn.disabled = true;
-                window.electronAPI.submitAuthCode(authCode);
-            });
-
-            authCodeInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') submitCodeBtn.click();
-            });
-
-            testBtn.addEventListener('click', () => {
-                const spreadsheetId = spreadsheetIdInput.value.trim();
-                if (!spreadsheetId) {
-                    statusDiv.textContent = 'Please enter a spreadsheet ID.';
-                    return;
-                }
-                statusDiv.textContent = 'Testing spreadsheet access...';
-                hideAllInfoBoxes();
-                processBtn.style.display = 'none';
-                testBtn.disabled = true;
-                window.electronAPI.testSpreadsheetAccess(spreadsheetId);
-            });
-
-            // MODIFIED: Process button now directly calls the API
-            processBtn.addEventListener('click', () => {
-                const spreadsheetId = spreadsheetIdInput.value.trim();
-                if (pendingMoves.length === 0) {
-                    statusDiv.textContent = 'No moves to process.';
-                    return;
-                }
-                statusDiv.textContent = 'Processing spreadsheet... This may take a moment.';
-                processBtn.disabled = true;
-                testBtn.disabled = true;
-                window.electronAPI.processSpreadsheet(spreadsheetId);
-            });
-            
-            revertBtn.addEventListener('click', () => {
-                statusDiv.textContent = 'Reverting last change...';
-                revertBtn.disabled = true;
-                window.electronAPI.revertLastChange();
-            });
-
-            // --- Electron API Listeners ---
-            window.electronAPI.receiveRestoreSession((data) => {
-                updateUI(data.authenticated, data.spreadsheetId);
-            });
-
-            window.electronAPI.receiveGoogleAuthSuccess((message) => {
-                statusDiv.textContent = message;
-                updateUI(true, spreadsheetIdInput.value);
-            });
-
-            window.electronAPI.receiveGoogleAuthError((message) => {
-                statusDiv.textContent = `Error: ${message}`;
-                submitCodeBtn.disabled = false;
-                loginBtn.style.display = 'block';
-                codeInputSection.style.display = 'none';
-            });
-
-            window.electronAPI.receiveLogoutComplete(() => {
-                statusDiv.textContent = 'Successfully logged out.';
-                updateUI(false);
-            });
-
-            window.electronAPI.receiveAuthExpired(() => {
-                statusDiv.textContent = 'Your session has expired. Please log in again.';
-                updateUI(false);
-            });
-
-            window.electronAPI.receiveTestAccessSuccess((data) => {
-                statusDiv.textContent = 'Spreadsheet access test successful!';
-                testBtn.disabled = false;
-                hideAllInfoBoxes();
-                
-                spreadsheetInfo.innerHTML = `
-                    <strong>Title:</strong> ${data.title}<br>
-                    <strong>Available Sheets:</strong>
-                    <ul>${data.sheets.map(sheet => `<li>${sheet.title}</li>`).join('')}</ul>
-                `;
-                spreadsheetInfo.style.display = 'block';
-
-                if (data.potentialMoves && data.potentialMoves.length > 0) {
-                    pendingMoves = data.potentialMoves;
-                    let movesHtml = data.potentialMoves.map(move => `
-                        <div class="move-item">
-                            <strong>${move.studentName}</strong> (Age ${move.age})<br>
-                            From: <em>${move.currentSheet}</em> → To: <em>${move.newSheet}</em>
-                        </div>
-                    `).join('');
-                    
-                    movesList.innerHTML = movesHtml;
-                    movesPreview.style.display = 'block';
-                    processBtn.style.display = 'inline-block';
-                    processBtn.disabled = false; // Ensure button is enabled
-                    statusDiv.innerHTML = `Found <strong>${data.potentialMoves.length}</strong> student(s) to move. Ready to process.`;
-                } else {
-                    pendingMoves = [];
-                    processBtn.style.display = 'none';
-                    statusDiv.textContent = 'All students are in their correct age groups!';
-                }
-            });
-            
-            window.electronAPI.receiveTestAccessExcelDetected(() => {
-                statusDiv.textContent = 'Excel format detected.';
-                testBtn.disabled = false;
-                hideAllInfoBoxes();
-                warningInfo.innerHTML = '<h4>⚠️ Excel Format Detected</h4><div>Please convert the file to Google Sheets format (File > Save as Google Sheets) and use the new Sheet ID.</div>';
-                warningInfo.style.display = 'block';
-            });
-
-            window.electronAPI.receiveTestAccessError((message) => {
-                statusDiv.textContent = 'Spreadsheet access test failed.';
-                testBtn.disabled = false;
-                hideAllInfoBoxes();
-                errorInfo.innerHTML = `<h4>Error:</h4><div>${message}</div>`;
-                errorInfo.style.display = 'block';
-            });
-
-            window.electronAPI.receiveProcessingComplete((message) => {
-                statusDiv.textContent = 'Processing completed successfully!';
-                processBtn.style.display = 'none'; // Hide process button, a new test is needed
-                testBtn.disabled = false;
-                hideAllInfoBoxes();
-                
-                revertMessage.textContent = message;
-                revertSection.style.display = 'block';
-                revertBtn.style.display = 'inline-block';
-                revertBtn.disabled = false;
-            });
-
-            window.electronAPI.receiveProcessingError((message) => {
-                statusDiv.textContent = 'Processing failed.';
-                processBtn.style.display = 'inline-block'; // Show button again on failure
-                processBtn.disabled = false;
-                testBtn.disabled = false;
-                hideAllInfoBoxes();
-                errorInfo.innerHTML = `<h4>Error:</h4><div>${message}</div>`;
-                errorInfo.style.display = 'block';
-            });
-
-            // Revert Listeners
-            window.electronAPI.receiveRevertComplete((message) => {
-                statusDiv.textContent = message;
-                revertSection.style.display = 'none';
-                revertBtn.disabled = true;
-                // Encourage user to re-test
-                statusDiv.innerHTML += '<br>Please test spreadsheet access again to see the restored state.';
-            });
-
-            window.electronAPI.receiveRevertError((message) => {
-                statusDiv.textContent = `Revert failed: ${message}`;
-                revertBtn.disabled = false;
-            });
-        });
-    </script>
+    <script src="renderer.js"></script>
 </body>
 </html>

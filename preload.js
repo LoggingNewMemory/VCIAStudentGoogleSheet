@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveSpreadsheetId: (spreadsheetId) => ipcRenderer.send('save-spreadsheet-id', spreadsheetId),
     testSpreadsheetAccess: (fileId) => ipcRenderer.send('test-spreadsheet-access', fileId),
     processSpreadsheet: (fileId) => ipcRenderer.send('process-spreadsheet', fileId),
-    revertLastChange: () => ipcRenderer.send('revert-last-change'),
 
     // --- Event Listeners from Main to Renderer ---
     // Auth
@@ -26,8 +25,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Spreadsheet Process
     receiveProcessingComplete: (callback) => ipcRenderer.on('processing-complete', (event, message) => callback(message)),
     receiveProcessingError: (callback) => ipcRenderer.on('processing-error', (event, message) => callback(message)),
-
-    // Revert
-    receiveRevertComplete: (callback) => ipcRenderer.on('revert-complete', (event, message) => callback(message)),
-    receiveRevertError: (callback) => ipcRenderer.on('revert-error', (event, message) => callback(message)),
 });

@@ -3,10 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
 
-// Global references
+// Global reference
 let mainWindow;
 let authWindow;
-let lastSuccessfulMoves = []; // For the revert feature
 
 // File paths for storing persistent data
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
@@ -15,10 +14,13 @@ const TOKENS_FILE = path.join(app.getPath('userData'), 'tokens.json');
 // --- Google Auth Setup ---
 let credentials;
 try {
-    const content = fs.readFileSync('client_secret.json');
+    // It's recommended to bundle client_secret.json or load it from a secure location
+    const secretPath = path.join(__dirname, 'client_secret.json');
+    const content = fs.readFileSync(secretPath);
     credentials = JSON.parse(content).installed;
 } catch (err) {
     console.error('Error loading client_secret.json:', err);
+    // Use dialog box in production to inform user
     app.quit();
 }
 const { client_secret, client_id } = credentials;
@@ -46,7 +48,10 @@ function loadTokens() {
         if (fs.existsSync(TOKENS_FILE)) {
             const tokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
             if (tokens.expiry_date && tokens.expiry_date <= Date.now()) {
-                if (tokens.refresh_token) return 'refresh_needed';
+                if (tokens.refresh_token) {
+                    oAuth2Client.setCredentials(tokens); // Set old tokens to use refresh_token
+                    return 'refresh_needed';
+                }
                 return false;
             }
             oAuth2Client.setCredentials(tokens);
@@ -65,7 +70,6 @@ function saveTokens(tokens) {
 function clearTokens() {
     try {
         if (fs.existsSync(TOKENS_FILE)) fs.unlinkSync(TOKENS_FILE);
-        lastSuccessfulMoves = []; // Clear undo history on logout
     } catch (error) { console.error('Error clearing tokens:', error); }
 }
 
@@ -86,7 +90,7 @@ async function refreshAccessToken() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 850,
-    height: 700,
+    height: 750, // Increased height slightly for better visibility of new info box
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -97,15 +101,24 @@ function createWindow() {
   mainWindow.loadFile('index.html');
   mainWindow.on('closed', () => { mainWindow = null; });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    require('electron').shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.webContents.once('did-finish-load', async () => {
     const config = loadConfig();
     const tokenStatus = loadTokens();
     let authenticated = false;
+
     if (tokenStatus === true) {
       authenticated = true;
     } else if (tokenStatus === 'refresh_needed') {
       authenticated = await refreshAccessToken();
     }
+    
+    if (!authenticated) clearTokens(); // Clear any invalid/expired tokens
+
     mainWindow.webContents.send('restore-session', { authenticated, spreadsheetId: config.spreadsheetId || '' });
   });
 }
@@ -116,26 +129,27 @@ app.on('activate', () => { if (mainWindow === null) createWindow(); });
 
 // --- Google API Helper ---
 function getErrorMessage(error) {
-    if (error.code === 404) return 'File not found. Please check the Spreadsheet ID.';
-    if (error.code === 403) return 'Access denied. Ensure the file is shared with your Google account and you have editor permissions.';
-    if (error.code === 401) {
+    const code = error.code || (error.response && error.response.status);
+    if (code === 404) return 'File not found. Please check the Spreadsheet ID.';
+    if (code === 403) return 'Permission denied. Ensure your Google account has "Editor" access to this Sheet.';
+    if (code === 401) {
         clearTokens();
-        mainWindow.webContents.send('auth-expired');
+        if(mainWindow) mainWindow.webContents.send('auth-expired');
         return 'Authentication expired. Please log in again.';
     }
-    return error.message || 'An unknown error occurred.';
+    return error.message || 'An unknown error occurred with the Google API.';
 }
 
 // --- IPC Handlers ---
 ipcMain.on('login-with-google', () => {
     const authUrl = oAuth2Client.generateAuthUrl({
         access_type: 'offline',
-        prompt: 'consent', // Important to get a refresh token every time
+        prompt: 'consent',
         scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly'],
     });
-    authWindow = new BrowserWindow({ width: 600, height: 800 });
+    authWindow = new BrowserWindow({ width: 600, height: 800, webPreferences: { nodeIntegration: false, contextIsolation: true } });
     authWindow.loadURL(authUrl);
-    authWindow.on('closed', () => { authWindow = null });
+    authWindow.on('closed', () => { authWindow = null; });
 });
 
 ipcMain.on('submit-auth-code', async (event, code) => {
@@ -147,7 +161,7 @@ ipcMain.on('submit-auth-code', async (event, code) => {
         mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
     } catch (error) {
         console.error('Error retrieving access token', error);
-        mainWindow.webContents.send('google-auth-error', 'Error authenticating. Please try logging in again.');
+        mainWindow.webContents.send('google-auth-error', 'Error authenticating. The code may be invalid or expired.');
     }
 });
 
@@ -161,12 +175,11 @@ ipcMain.on('save-spreadsheet-id', (event, spreadsheetId) => {
     const config = loadConfig();
     config.spreadsheetId = spreadsheetId;
     saveConfig(config);
-    lastSuccessfulMoves = []; // Clear undo history if sheet changes
 });
 
 ipcMain.on('test-spreadsheet-access', async (event, spreadsheetId) => {
-    lastSuccessfulMoves = []; // New test clears old undo history
     try {
+        // 1. Check file metadata and type first
         const drive = google.drive({ version: 'v3', auth: oAuth2Client });
         const fileResponse = await drive.files.get({ fileId: spreadsheetId, fields: 'name,mimeType' });
         const file = fileResponse.data;
@@ -176,10 +189,12 @@ ipcMain.on('test-spreadsheet-access', async (event, spreadsheetId) => {
             return;
         }
 
+        // 2. Get sheet titles
         const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-        const response = await sheets.spreadsheets.get({ spreadsheetId });
+        const response = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties.title' });
         const sheetTitles = response.data.sheets.map(s => ({ title: s.properties.title }));
         
+        // 3. Analyze for potential moves
         const potentialMoves = await analyzeStudentMoves(spreadsheetId);
         
         event.sender.send('test-access-success', {
@@ -203,83 +218,7 @@ ipcMain.on('process-spreadsheet', async (event, spreadsheetId) => {
     }
 });
 
-ipcMain.on('revert-last-change', async (event, spreadsheetId) => {
-    if (!lastSuccessfulMoves || lastSuccessfulMoves.length === 0) {
-        event.sender.send('revert-error', 'No recent operation to revert.');
-        return;
-    }
-
-    try {
-        const config = loadConfig();
-        const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-        let revertedCount = 0;
-
-        // The "undo" is to move students from their new sheet back to their old one
-        const undoMoves = lastSuccessfulMoves.map(move => ({
-            ...move,
-            // Swap current and new sheets for the revert operation
-            currentSheet: move.newSheet,
-            newSheet: move.oldSheet,
-            studentData: move.originalRowData // Use original data for re-insertion
-        }));
-
-        // Delete students from the sheet they were just moved TO
-        const deleteRequests = [];
-        const allSheetsInfo = (await sheets.spreadsheets.get({ spreadsheetId: config.spreadsheetId })).data.sheets;
-
-        for (const move of lastSuccessfulMoves) {
-            const sheetData = await sheets.spreadsheets.values.get({ spreadsheetId: config.spreadsheetId, range: move.newSheet });
-            const rows = sheetData.data.values || [];
-            
-            // Find the student in the new sheet to delete them
-            const rowIndexToDelete = rows.findIndex(row => row.includes(move.studentName)); // Simple name check
-            
-            if (rowIndexToDelete !== -1) {
-                const sheetInfo = allSheetsInfo.find(s => s.properties.title === move.newSheet);
-                if (sheetInfo) {
-                    deleteRequests.push({
-                        deleteDimension: {
-                            range: {
-                                sheetId: sheetInfo.properties.sheetId,
-                                dimension: 'ROWS',
-                                startIndex: rowIndexToDelete,
-                                endIndex: rowIndexToDelete + 1,
-                            },
-                        },
-                    });
-                }
-            }
-        }
-        
-        // Append students back to their original sheets
-        for (const move of lastSuccessfulMoves) {
-             await sheets.spreadsheets.values.append({
-                spreadsheetId: config.spreadsheetId,
-                range: move.currentSheet, // The original sheet
-                valueInputOption: 'USER_ENTERED',
-                resource: {
-                    values: [move.studentData], // The original student data
-                },
-            });
-            revertedCount++;
-        }
-        
-        if (deleteRequests.length > 0) {
-            await sheets.spreadsheets.batchUpdate({ spreadsheetId: config.spreadsheetId, resource: { requests: deleteRequests } });
-        }
-
-        event.sender.send('revert-complete', `Revert successful! Restored ${revertedCount} students.`);
-        lastSuccessfulMoves = []; // Clear history after reverting
-
-    } catch(error) {
-        console.error('Error reverting changes:', error);
-        event.sender.send('revert-error', getErrorMessage(error));
-    }
-});
-
-
 // --- Core Logic Functions ---
-
 async function analyzeStudentMoves(spreadsheetId) {
     const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
     const sheetMetadata = await sheets.spreadsheets.get({ spreadsheetId });
@@ -289,10 +228,10 @@ async function analyzeStudentMoves(spreadsheetId) {
     const availableSheets = allSheets.filter(s => !blacklist.includes(s.properties.title));
 
     const sheetProgression = [
-        { namePattern: /young ws|young w/i, range: { min: 6, max: 8 }, displayName: 'Young WS' },
-        { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 }, displayName: 'WS' },
-        { namePattern: /young victor/i, range: { min: 12, max: 14 }, displayName: 'Young Victor' },
-        { namePattern: /^victor(?!.*young)/i, range: { min: 15, max: 17 }, displayName: 'Victor' }
+        { namePattern: /young ws|young w\/i/i, range: { min: 6, max: 8 } },
+        { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 } },
+        { namePattern: /young victor/i, range: { min: 12, max: 14 } },
+        { namePattern: /^victor(?!.*young)/i, range: { min: 15, max: 17 } }
     ];
 
     let potentialMoves = [];
@@ -313,8 +252,7 @@ async function analyzeStudentMoves(spreadsheetId) {
                 headerRowIndex = j;
                 dobIndex = rows[j].indexOf('DOB');
                 nameIndex = rows[j].findIndex(cell => cell && /name/i.test(cell) && !/user/i.test(cell));
-                if (nameIndex === -1) nameIndex = rows[j].findIndex(cell => /name/i.test(cell)); // Fallback
-                if (nameIndex === -1) nameIndex = 0; // Default to first col
+                if (nameIndex === -1) nameIndex = 0;
                 break;
             }
         }
@@ -348,8 +286,7 @@ async function analyzeStudentMoves(spreadsheetId) {
                                 currentSheet: sheetName,
                                 currentSheetId: currentSheetInfo.properties.sheetId,
                                 newSheet: nextSheetInfo.properties.title,
-                                newSheetId: nextSheetInfo.properties.sheetId,
-                                rowIndex: j + 1,
+                                rowIndex: j, // 0-indexed row
                                 studentData: row,
                             });
                         }
@@ -372,22 +309,16 @@ async function processGoogleSheet(spreadsheetId, event) {
         return;
     }
 
-    // Store moves for potential revert action
-    lastSuccessfulMoves = moves; 
-    let movedCount = 0;
-
-    // --- 1. Append Students to New Sheets ---
-    const sourceSheetHeaders = {}; // Cache headers to avoid re-fetching
+    const sourceSheetHeaders = {};
     const targetSheetHeaders = {};
 
+    // 1. Append Students to New Sheets
     for (const move of moves) {
-        // Get source headers if not cached
         if (!sourceSheetHeaders[move.currentSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.currentSheet });
             const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
             sourceSheetHeaders[move.currentSheet] = headerRow || [];
         }
-        // Get target headers if not cached
         if (!targetSheetHeaders[move.newSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.newSheet });
             const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
@@ -397,13 +328,11 @@ async function processGoogleSheet(spreadsheetId, event) {
         const sourceHeaders = sourceSheetHeaders[move.currentSheet];
         const targetHeaders = targetSheetHeaders[move.newSheet];
         
-        // Map data based on headers
         const mappedData = targetHeaders.map(targetHeader => {
             const sourceIndex = sourceHeaders.indexOf(targetHeader);
-            return sourceIndex !== -1 ? move.studentData[sourceIndex] : ''; // Default to empty string if column doesn't exist in source
+            return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
         });
 
-        // Use append for safety
         await sheets.spreadsheets.values.append({
             spreadsheetId,
             range: move.newSheet,
@@ -412,18 +341,19 @@ async function processGoogleSheet(spreadsheetId, event) {
         });
     }
 
-    // --- 2. Delete Students from Old Sheets ---
+    // 2. Delete Students from Old Sheets
     const deletionsBySheet = {};
     for (const move of moves) {
         if (!deletionsBySheet[move.currentSheetId]) {
             deletionsBySheet[move.currentSheetId] = [];
         }
+        // Group row indices by sheet
         deletionsBySheet[move.currentSheetId].push(move.rowIndex);
     }
 
     const deleteRequests = [];
     for (const sheetId in deletionsBySheet) {
-        // Sort row indices in descending order to avoid shifting issues
+        // Important: Sort row indices descending to avoid shifting issues during deletion
         const sortedRows = deletionsBySheet[sheetId].sort((a, b) => b - a);
         for (const rowIndex of sortedRows) {
             deleteRequests.push({
@@ -431,8 +361,8 @@ async function processGoogleSheet(spreadsheetId, event) {
                     range: {
                         sheetId: parseInt(sheetId, 10),
                         dimension: 'ROWS',
-                        startIndex: rowIndex - 1, // API is 0-indexed
-                        endIndex: rowIndex,
+                        startIndex: rowIndex, 
+                        endIndex: rowIndex + 1,
                     },
                 },
             });
@@ -444,8 +374,7 @@ async function processGoogleSheet(spreadsheetId, event) {
             spreadsheetId,
             resource: { requests: deleteRequests },
         });
-        movedCount = moves.length;
     }
     
-    event.sender.send('processing-complete', `Successfully moved ${movedCount} students.`);
+    event.sender.send('processing-complete', `Successfully moved ${moves.length} student(s).`);
 }
