@@ -3,378 +3,656 @@ const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
 
-// Global reference
-let mainWindow;
-let authWindow;
+// ===========================
+// CONSTANTS AND CONFIGURATION
+// ===========================
 
-// File paths for storing persistent data
-const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
-const TOKENS_FILE = path.join(app.getPath('userData'), 'tokens.json');
+const WINDOW_CONFIG = {
+  width: 850,
+  height: 750,
+  webPreferences: {
+    preload: path.join(__dirname, 'preload.js'),
+    contextIsolation: true,
+    enableRemoteModule: false,
+    nodeIntegration: false,
+  },
+};
 
-// --- Google Auth Setup ---
-let credentials;
-try {
-    // It's recommended to bundle client_secret.json or load it from a secure location
-    const secretPath = path.join(__dirname, 'client_secret.json');
-    const content = fs.readFileSync(secretPath);
-    credentials = JSON.parse(content).installed;
-} catch (err) {
-    console.error('Error loading client_secret.json:', err);
-    // Use dialog box in production to inform user
-    app.quit();
-}
-const { client_secret, client_id } = credentials;
+const AUTH_WINDOW_CONFIG = {
+  width: 600,
+  height: 800,
+  webPreferences: {
+    nodeIntegration: false,
+    contextIsolation: true,
+  },
+};
+
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive.readonly',
+];
+
 const REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
-const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, REDIRECT_URI);
 
-// --- Config & Token Management (Helper Functions) ---
-function loadConfig() {
-    try {
-        if (fs.existsSync(CONFIG_FILE)) {
-            return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        }
-    } catch (error) { console.error('Error loading config:', error); }
-    return { spreadsheetId: '' };
-}
+const SHEET_BLACKLIST = ['ALL STUDENTS', 'NEW STUDENTS', 'Sheet4'];
 
-function saveConfig(config) {
-    try {
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-    } catch (error) { console.error('Error saving config:', error); }
-}
+const SHEET_PROGRESSION = [
+  { namePattern: /young ws|young w\/i/i, range: { min: 6, max: 8 } },
+  { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 } },
+  { namePattern: /young victor/i, range: { min: 12, max: 14 } },
+  { namePattern: /^victor(?!.*young)/i, range: { min: 15, max: 17 } },
+];
 
-function loadTokens() {
-    try {
-        if (fs.existsSync(TOKENS_FILE)) {
-            const tokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
-            if (tokens.expiry_date && tokens.expiry_date <= Date.now()) {
-                if (tokens.refresh_token) {
-                    oAuth2Client.setCredentials(tokens); // Set old tokens to use refresh_token
-                    return 'refresh_needed';
-                }
-                return false;
-            }
-            oAuth2Client.setCredentials(tokens);
-            return true;
-        }
-    } catch (error) { console.error('Error loading tokens:', error); }
-    return false;
-}
+// ===========================
+// GLOBAL STATE
+// ===========================
 
-function saveTokens(tokens) {
-    try {
-        fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2));
-    } catch (error) { console.error('Error saving tokens:', error); }
-}
+class AppState {
+  constructor() {
+    this.mainWindow = null;
+    this.authWindow = null;
+    this.oAuth2Client = null;
+    this.configFile = path.join(app.getPath('userData'), 'config.json');
+    this.tokensFile = path.join(app.getPath('userData'), 'tokens.json');
+  }
 
-function clearTokens() {
+  initializeGoogleAuth() {
     try {
-        if (fs.existsSync(TOKENS_FILE)) fs.unlinkSync(TOKENS_FILE);
-    } catch (error) { console.error('Error clearing tokens:', error); }
-}
-
-async function refreshAccessToken() {
-    try {
-        const { credentials } = await oAuth2Client.refreshAccessToken();
-        oAuth2Client.setCredentials(credentials);
-        saveTokens(credentials);
-        return true;
-    } catch (error) {
-        console.error('Error refreshing token:', error);
-        clearTokens();
-        return false;
+      const secretPath = path.join(__dirname, 'client_secret.json');
+      const content = fs.readFileSync(secretPath);
+      const credentials = JSON.parse(content).installed;
+      const { client_secret, client_id } = credentials;
+      
+      this.oAuth2Client = new google.auth.OAuth2(client_id, client_secret, REDIRECT_URI);
+      return true;
+    } catch (err) {
+      console.error('Error loading client_secret.json:', err);
+      return false;
     }
+  }
 }
 
-// --- Electron Window Management ---
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 850,
-    height: 750, // Increased height slightly for better visibility of new info box
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      enableRemoteModule: false,
-      nodeIntegration: false,
-    },
-  });
-  mainWindow.loadFile('index.html');
-  mainWindow.on('closed', () => { mainWindow = null; });
+const appState = new AppState();
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url);
-    return { action: 'deny' };
-  });
+// ===========================
+// UTILITY FUNCTIONS
+// ===========================
 
-  mainWindow.webContents.once('did-finish-load', async () => {
-    const config = loadConfig();
-    const tokenStatus = loadTokens();
+const Utils = {
+  safeJsonRead(filePath, defaultValue = {}) {
+    try {
+      if (fs.existsSync(filePath)) {
+        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      }
+    } catch (error) {
+      console.error(`Error reading ${filePath}:`, error);
+    }
+    return defaultValue;
+  },
+
+  safeJsonWrite(filePath, data) {
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      return true;
+    } catch (error) {
+      console.error(`Error writing ${filePath}:`, error);
+      return false;
+    }
+  },
+
+  safeFileDelete(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      return true;
+    } catch (error) {
+      console.error(`Error deleting ${filePath}:`, error);
+      return false;
+    }
+  },
+
+  calculateAge(dateOfBirth) {
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+      throw new Error('Invalid date format');
+    }
+
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    
+    return age;
+  },
+
+  getGoogleApiErrorMessage(error) {
+    const code = error.code || (error.response && error.response.status);
+    
+    switch (code) {
+      case 404:
+        return 'File not found. Please check the Spreadsheet ID.';
+      case 403:
+        return 'Permission denied. Ensure your Google account has "Editor" access to this Sheet.';
+      case 401:
+        TokenManager.clearTokens();
+        if (appState.mainWindow) {
+          appState.mainWindow.webContents.send('auth-expired');
+        }
+        return 'Authentication expired. Please log in again.';
+      default:
+        return error.message || 'An unknown error occurred with the Google API.';
+    }
+  },
+};
+
+// ===========================
+// CONFIGURATION MANAGEMENT
+// ===========================
+
+const ConfigManager = {
+  load() {
+    return Utils.safeJsonRead(appState.configFile, { spreadsheetId: '' });
+  },
+
+  save(config) {
+    return Utils.safeJsonWrite(appState.configFile, config);
+  },
+
+  updateSpreadsheetId(spreadsheetId) {
+    const config = this.load();
+    config.spreadsheetId = spreadsheetId;
+    return this.save(config);
+  },
+};
+
+// ===========================
+// TOKEN MANAGEMENT
+// ===========================
+
+const TokenManager = {
+  load() {
+    try {
+      const tokens = Utils.safeJsonRead(appState.tokensFile, null);
+      if (!tokens) return false;
+
+      // Check token expiry
+      if (tokens.expiry_date && tokens.expiry_date <= Date.now()) {
+        return tokens.refresh_token ? 'refresh_needed' : false;
+      }
+
+      appState.oAuth2Client.setCredentials(tokens);
+      return true;
+    } catch (error) {
+      console.error('Error loading tokens:', error);
+      return false;
+    }
+  },
+
+  save(tokens) {
+    return Utils.safeJsonWrite(appState.tokensFile, tokens);
+  },
+
+  clearTokens() {
+    Utils.safeFileDelete(appState.tokensFile);
+    appState.oAuth2Client.setCredentials({});
+  },
+
+  async refreshAccessToken() {
+    try {
+      const { credentials } = await appState.oAuth2Client.refreshAccessToken();
+      appState.oAuth2Client.setCredentials(credentials);
+      this.save(credentials);
+      return true;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      this.clearTokens();
+      return false;
+    }
+  },
+};
+
+// ===========================
+// WINDOW MANAGEMENT
+// ===========================
+
+const WindowManager = {
+  createMainWindow() {
+    appState.mainWindow = new BrowserWindow(WINDOW_CONFIG);
+    appState.mainWindow.loadFile('index.html');
+    
+    appState.mainWindow.on('closed', () => {
+      appState.mainWindow = null;
+    });
+
+    appState.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      require('electron').shell.openExternal(url);
+      return { action: 'deny' };
+    });
+
+    appState.mainWindow.webContents.once('did-finish-load', async () => {
+      await this.restoreSession();
+    });
+  },
+
+  createAuthWindow(authUrl) {
+    appState.authWindow = new BrowserWindow(AUTH_WINDOW_CONFIG);
+    appState.authWindow.loadURL(authUrl);
+    appState.authWindow.on('closed', () => {
+      appState.authWindow = null;
+    });
+  },
+
+  closeAuthWindow() {
+    if (appState.authWindow) {
+      appState.authWindow.close();
+      appState.authWindow = null;
+    }
+  },
+
+  async restoreSession() {
+    const config = ConfigManager.load();
+    const tokenStatus = TokenManager.load();
     let authenticated = false;
 
     if (tokenStatus === true) {
       authenticated = true;
     } else if (tokenStatus === 'refresh_needed') {
-      authenticated = await refreshAccessToken();
+      authenticated = await TokenManager.refreshAccessToken();
+    }
+
+    if (!authenticated) {
+      TokenManager.clearTokens();
+    }
+
+    appState.mainWindow.webContents.send('restore-session', {
+      authenticated,
+      spreadsheetId: config.spreadsheetId || '',
+    });
+  },
+};
+
+// ===========================
+// GOOGLE SHEETS OPERATIONS
+// ===========================
+
+const SheetsOperations = {
+  async getFileMetadata(spreadsheetId) {
+    const drive = google.drive({ version: 'v3', auth: appState.oAuth2Client });
+    const response = await drive.files.get({
+      fileId: spreadsheetId,
+      fields: 'name,mimeType',
+    });
+    return response.data;
+  },
+
+  async getSheetTitles(spreadsheetId) {
+    const sheets = google.sheets({ version: 'v4', auth: appState.oAuth2Client });
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties.title',
+    });
+    return response.data.sheets.map(s => ({ title: s.properties.title }));
+  },
+
+  async getSheetData(spreadsheetId, sheetName) {
+    const sheets = google.sheets({ version: 'v4', auth: appState.oAuth2Client });
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`,
+    });
+    return response.data.values || [];
+  },
+
+  async getAllSheetsData(spreadsheetId) {
+    const sheets = google.sheets({ version: 'v4', auth: appState.oAuth2Client });
+    const metadata = await sheets.spreadsheets.get({ spreadsheetId });
+    return metadata.data.sheets;
+  },
+
+  async appendStudentData(spreadsheetId, sheetName, data) {
+    const sheets = google.sheets({ version: 'v4', auth: appState.oAuth2Client });
+    return await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: sheetName,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: [data] },
+    });
+  },
+
+  async deleteRows(spreadsheetId, deleteRequests) {
+    if (deleteRequests.length === 0) return;
+    
+    const sheets = google.sheets({ version: 'v4', auth: appState.oAuth2Client });
+    return await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: { requests: deleteRequests },
+    });
+  },
+};
+
+// ===========================
+// STUDENT MOVEMENT LOGIC
+// ===========================
+
+const StudentMover = {
+  async analyzeStudentMoves(spreadsheetId) {
+    const allSheets = await SheetsOperations.getAllSheetsData(spreadsheetId);
+    const availableSheets = allSheets.filter(
+      s => !SHEET_BLACKLIST.includes(s.properties.title)
+    );
+
+    const potentialMoves = [];
+
+    for (let i = 0; i < SHEET_PROGRESSION.length; i++) {
+      const currentLevel = SHEET_PROGRESSION[i];
+      const currentSheetInfo = availableSheets.find(s =>
+        currentLevel.namePattern.test(s.properties.title)
+      );
+      
+      if (!currentSheetInfo) continue;
+
+      const moves = await this.analyzeSingleSheet(
+        spreadsheetId,
+        currentSheetInfo,
+        currentLevel,
+        availableSheets,
+        i
+      );
+      
+      potentialMoves.push(...moves);
+    }
+
+    return potentialMoves;
+  },
+
+  async analyzeSingleSheet(spreadsheetId, sheetInfo, currentLevel, availableSheets, levelIndex) {
+    const sheetName = sheetInfo.properties.title;
+    const rows = await SheetsOperations.getSheetData(spreadsheetId, sheetName);
+    
+    if (!rows || rows.length === 0) return [];
+
+    const headerInfo = this.findHeaderRow(rows);
+    if (!headerInfo) return [];
+
+    const moves = [];
+    
+    for (let rowIndex = headerInfo.index + 1; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      if (!row || !row[headerInfo.dobIndex]) continue;
+
+      try {
+        const age = Utils.calculateAge(row[headerInfo.dobIndex]);
+        
+        if (age > currentLevel.range.max) {
+          const targetSheet = this.findTargetSheet(age, levelIndex, availableSheets);
+          
+          if (targetSheet && targetSheet.properties.title !== sheetName) {
+            moves.push({
+              studentName: row[headerInfo.nameIndex] || `Student in row ${rowIndex + 1}`,
+              age: age,
+              currentSheet: sheetName,
+              currentSheetId: sheetInfo.properties.sheetId,
+              newSheet: targetSheet.properties.title,
+              rowIndex: rowIndex,
+              studentData: row,
+            });
+          }
+        }
+      } catch (error) {
+        console.log(`Could not parse date for row ${rowIndex + 1} in ${sheetName}: ${row[headerInfo.dobIndex]}`);
+      }
+    }
+
+    return moves;
+  },
+
+  findHeaderRow(rows) {
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i] && rows[i].includes('DOB')) {
+        const dobIndex = rows[i].indexOf('DOB');
+        const nameIndex = rows[i].findIndex(
+          cell => cell && /name/i.test(cell) && !/user/i.test(cell)
+        );
+        
+        return {
+          index: i,
+          dobIndex: dobIndex,
+          nameIndex: nameIndex === -1 ? 0 : nameIndex,
+        };
+      }
+    }
+    return null;
+  },
+
+  findTargetSheet(age, currentLevelIndex, availableSheets) {
+    let nextLevelIndex = currentLevelIndex + 1;
+    
+    // Find the appropriate level for the student's age
+    while (nextLevelIndex < SHEET_PROGRESSION.length && age > SHEET_PROGRESSION[nextLevelIndex].range.max) {
+      nextLevelIndex++;
     }
     
-    if (!authenticated) clearTokens(); // Clear any invalid/expired tokens
+    if (nextLevelIndex >= SHEET_PROGRESSION.length) return null;
+    
+    const nextLevel = SHEET_PROGRESSION[nextLevelIndex];
+    return availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
+  },
 
-    mainWindow.webContents.send('restore-session', { authenticated, spreadsheetId: config.spreadsheetId || '' });
+  async processStudentMoves(spreadsheetId, moves) {
+    if (moves.length === 0) return 'No students needed to be moved.';
+
+    const headers = await this.collectHeaders(spreadsheetId, moves);
+    
+    // 1. Move students to new sheets
+    await this.moveStudentsToNewSheets(spreadsheetId, moves, headers);
+    
+    // 2. Delete students from old sheets
+    await this.deleteStudentsFromOldSheets(spreadsheetId, moves);
+    
+    return `Successfully moved ${moves.length} student(s).`;
+  },
+
+  async collectHeaders(spreadsheetId, moves) {
+    const sourceHeaders = {};
+    const targetHeaders = {};
+    
+    for (const move of moves) {
+      if (!sourceHeaders[move.currentSheet]) {
+        const rows = await SheetsOperations.getSheetData(spreadsheetId, move.currentSheet);
+        const headerRow = rows.find(r => r.includes('DOB'));
+        sourceHeaders[move.currentSheet] = headerRow || [];
+      }
+      
+      if (!targetHeaders[move.newSheet]) {
+        const rows = await SheetsOperations.getSheetData(spreadsheetId, move.newSheet);
+        const headerRow = rows.find(r => r.includes('DOB'));
+        targetHeaders[move.newSheet] = headerRow || [];
+      }
+    }
+    
+    return { sourceHeaders, targetHeaders };
+  },
+
+  async moveStudentsToNewSheets(spreadsheetId, moves, headers) {
+    for (const move of moves) {
+      const sourceHeaderRow = headers.sourceHeaders[move.currentSheet];
+      const targetHeaderRow = headers.targetHeaders[move.newSheet];
+      
+      const mappedData = targetHeaderRow.map(targetHeader => {
+        const sourceIndex = sourceHeaderRow.indexOf(targetHeader);
+        return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
+      });
+      
+      await SheetsOperations.appendStudentData(spreadsheetId, move.newSheet, mappedData);
+    }
+  },
+
+  async deleteStudentsFromOldSheets(spreadsheetId, moves) {
+    const deletionsBySheet = this.groupDeletionsBySheet(moves);
+    const deleteRequests = this.buildDeleteRequests(deletionsBySheet);
+    
+    await SheetsOperations.deleteRows(spreadsheetId, deleteRequests);
+  },
+
+  groupDeletionsBySheet(moves) {
+    const deletions = {};
+    
+    for (const move of moves) {
+      if (!deletions[move.currentSheetId]) {
+        deletions[move.currentSheetId] = [];
+      }
+      deletions[move.currentSheetId].push(move.rowIndex);
+    }
+    
+    return deletions;
+  },
+
+  buildDeleteRequests(deletionsBySheet) {
+    const deleteRequests = [];
+    
+    for (const sheetId in deletionsBySheet) {
+      // Sort row indices descending to avoid shifting issues during deletion
+      const sortedRows = deletionsBySheet[sheetId].sort((a, b) => b - a);
+      
+      for (const rowIndex of sortedRows) {
+        deleteRequests.push({
+          deleteDimension: {
+            range: {
+              sheetId: parseInt(sheetId, 10),
+              dimension: 'ROWS',
+              startIndex: rowIndex,
+              endIndex: rowIndex + 1,
+            },
+          },
+        });
+      }
+    }
+    
+    return deleteRequests;
+  },
+};
+
+// ===========================
+// IPC HANDLERS
+// ===========================
+
+const IPCHandlers = {
+  registerAll() {
+    ipcMain.on('login-with-google', this.handleGoogleLogin);
+    ipcMain.on('submit-auth-code', this.handleAuthCode);
+    ipcMain.on('logout', this.handleLogout);
+    ipcMain.on('save-spreadsheet-id', this.handleSaveSpreadsheetId);
+    ipcMain.on('test-spreadsheet-access', this.handleTestSpreadsheetAccess);
+    ipcMain.on('process-spreadsheet', this.handleProcessSpreadsheet);
+  },
+
+  handleGoogleLogin() {
+    const authUrl = appState.oAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: GOOGLE_SCOPES,
+    });
+    
+    WindowManager.createAuthWindow(authUrl);
+  },
+
+  async handleAuthCode(event, code) {
+    WindowManager.closeAuthWindow();
+    
+    try {
+      const { tokens } = await appState.oAuth2Client.getToken(code);
+      appState.oAuth2Client.setCredentials(tokens);
+      TokenManager.save(tokens);
+      
+      appState.mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
+    } catch (error) {
+      console.error('Error retrieving access token', error);
+      appState.mainWindow.webContents.send('google-auth-error', 'Error authenticating. The code may be invalid or expired.');
+    }
+  },
+
+  handleLogout() {
+    TokenManager.clearTokens();
+    appState.mainWindow.webContents.send('logout-complete');
+  },
+
+  handleSaveSpreadsheetId(event, spreadsheetId) {
+    ConfigManager.updateSpreadsheetId(spreadsheetId);
+  },
+
+  async handleTestSpreadsheetAccess(event, spreadsheetId) {
+    try {
+      // Check file metadata and type
+      const file = await SheetsOperations.getFileMetadata(spreadsheetId);
+      
+      if (file.mimeType !== 'application/vnd.google-apps.spreadsheet') {
+        event.sender.send('test-access-excel-detected');
+        return;
+      }
+
+      // Get sheet information and analyze moves
+      const [sheetTitles, potentialMoves] = await Promise.all([
+        SheetsOperations.getSheetTitles(spreadsheetId),
+        StudentMover.analyzeStudentMoves(spreadsheetId),
+      ]);
+
+      event.sender.send('test-access-success', {
+        title: file.name,
+        sheets: sheetTitles,
+        potentialMoves: potentialMoves,
+      });
+    } catch (error) {
+      console.error('Error testing access:', error);
+      event.sender.send('test-access-error', Utils.getGoogleApiErrorMessage(error));
+    }
+  },
+
+  async handleProcessSpreadsheet(event, spreadsheetId) {
+    try {
+      const moves = await StudentMover.analyzeStudentMoves(spreadsheetId);
+      const result = await StudentMover.processStudentMoves(spreadsheetId, moves);
+      event.sender.send('processing-complete', result);
+    } catch (error) {
+      console.error('Error processing file:', error);
+      event.sender.send('processing-error', Utils.getGoogleApiErrorMessage(error));
+    }
+  },
+};
+
+// ===========================
+// APPLICATION INITIALIZATION
+// ===========================
+
+function initializeApp() {
+  // Initialize Google Auth
+  if (!appState.initializeGoogleAuth()) {
+    console.error('Failed to initialize Google Auth. Exiting...');
+    app.quit();
+    return;
+  }
+
+  // Register IPC handlers
+  IPCHandlers.registerAll();
+
+  // Handle app events
+  app.on('ready', WindowManager.createMainWindow);
+  
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+  
+  app.on('activate', () => {
+    if (appState.mainWindow === null) {
+      WindowManager.createMainWindow();
+    }
   });
 }
 
-app.on('ready', createWindow);
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('activate', () => { if (mainWindow === null) createWindow(); });
-
-// --- Google API Helper ---
-function getErrorMessage(error) {
-    const code = error.code || (error.response && error.response.status);
-    if (code === 404) return 'File not found. Please check the Spreadsheet ID.';
-    if (code === 403) return 'Permission denied. Ensure your Google account has "Editor" access to this Sheet.';
-    if (code === 401) {
-        clearTokens();
-        if(mainWindow) mainWindow.webContents.send('auth-expired');
-        return 'Authentication expired. Please log in again.';
-    }
-    return error.message || 'An unknown error occurred with the Google API.';
-}
-
-// --- IPC Handlers ---
-ipcMain.on('login-with-google', () => {
-    const authUrl = oAuth2Client.generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent',
-        scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly'],
-    });
-    authWindow = new BrowserWindow({ width: 600, height: 800, webPreferences: { nodeIntegration: false, contextIsolation: true } });
-    authWindow.loadURL(authUrl);
-    authWindow.on('closed', () => { authWindow = null; });
-});
-
-ipcMain.on('submit-auth-code', async (event, code) => {
-    if (authWindow) authWindow.close();
-    try {
-        const { tokens } = await oAuth2Client.getToken(code);
-        oAuth2Client.setCredentials(tokens);
-        saveTokens(tokens);
-        mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
-    } catch (error) {
-        console.error('Error retrieving access token', error);
-        mainWindow.webContents.send('google-auth-error', 'Error authenticating. The code may be invalid or expired.');
-    }
-});
-
-ipcMain.on('logout', () => {
-    clearTokens();
-    oAuth2Client.setCredentials({});
-    mainWindow.webContents.send('logout-complete');
-});
-
-ipcMain.on('save-spreadsheet-id', (event, spreadsheetId) => {
-    const config = loadConfig();
-    config.spreadsheetId = spreadsheetId;
-    saveConfig(config);
-});
-
-ipcMain.on('test-spreadsheet-access', async (event, spreadsheetId) => {
-    try {
-        // 1. Check file metadata and type first
-        const drive = google.drive({ version: 'v3', auth: oAuth2Client });
-        const fileResponse = await drive.files.get({ fileId: spreadsheetId, fields: 'name,mimeType' });
-        const file = fileResponse.data;
-
-        if (file.mimeType !== 'application/vnd.google-apps.spreadsheet') {
-            event.sender.send('test-access-excel-detected');
-            return;
-        }
-
-        // 2. Get sheet titles
-        const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-        const response = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties.title' });
-        const sheetTitles = response.data.sheets.map(s => ({ title: s.properties.title }));
-        
-        // 3. Analyze for potential moves
-        const potentialMoves = await analyzeStudentMoves(spreadsheetId);
-        
-        event.sender.send('test-access-success', {
-            title: file.name,
-            sheets: sheetTitles,
-            potentialMoves: potentialMoves
-        });
-
-    } catch (error) {
-        console.error('Error testing access:', error);
-        event.sender.send('test-access-error', getErrorMessage(error));
-    }
-});
-
-ipcMain.on('process-spreadsheet', async (event, spreadsheetId) => {
-    try {
-        await processGoogleSheet(spreadsheetId, event);
-    } catch (error) {
-        console.error('Error processing file:', error);
-        event.sender.send('processing-error', getErrorMessage(error));
-    }
-});
-
-// --- Core Logic Functions ---
-async function analyzeStudentMoves(spreadsheetId) {
-    const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-    const sheetMetadata = await sheets.spreadsheets.get({ spreadsheetId });
-    const allSheets = sheetMetadata.data.sheets;
-
-    const blacklist = ['ALL STUDENTS', 'NEW STUDENTS', 'Sheet4'];
-    const availableSheets = allSheets.filter(s => !blacklist.includes(s.properties.title));
-
-    const sheetProgression = [
-        { namePattern: /young ws|young w\/i/i, range: { min: 6, max: 8 } },
-        { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 } },
-        { namePattern: /young victor/i, range: { min: 12, max: 14 } },
-        { namePattern: /^victor(?!.*young)/i, range: { min: 15, max: 17 } }
-    ];
-
-    let potentialMoves = [];
-
-    for (let i = 0; i < sheetProgression.length; i++) {
-        const currentLevel = sheetProgression[i];
-        const currentSheetInfo = availableSheets.find(s => currentLevel.namePattern.test(s.properties.title));
-        if (!currentSheetInfo) continue;
-        
-        const sheetName = currentSheetInfo.properties.title;
-        const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!A:Z` });
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) continue;
-
-        let headerRowIndex = -1, dobIndex = -1, nameIndex = -1;
-        for (let j = 0; j < rows.length; j++) {
-            if (rows[j] && rows[j].includes('DOB')) {
-                headerRowIndex = j;
-                dobIndex = rows[j].indexOf('DOB');
-                nameIndex = rows[j].findIndex(cell => cell && /name/i.test(cell) && !/user/i.test(cell));
-                if (nameIndex === -1) nameIndex = 0;
-                break;
-            }
-        }
-        if (headerRowIndex === -1) continue;
-
-        for (let j = headerRowIndex + 1; j < rows.length; j++) {
-            const row = rows[j];
-            if (!row || !row[dobIndex]) continue;
-
-            try {
-                const dob = new Date(row[dobIndex]);
-                if (isNaN(dob.getTime())) continue;
-
-                const today = new Date();
-                let age = today.getFullYear() - dob.getFullYear();
-                const m = today.getMonth() - dob.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-
-                if (age > currentLevel.range.max) {
-                    let nextLevelIndex = i + 1;
-                    while (nextLevelIndex < sheetProgression.length && age > sheetProgression[nextLevelIndex].range.max) {
-                        nextLevelIndex++;
-                    }
-                    if (nextLevelIndex < sheetProgression.length) {
-                        const nextLevel = sheetProgression[nextLevelIndex];
-                        const nextSheetInfo = availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
-                        if (nextSheetInfo && nextSheetInfo.properties.title !== sheetName) {
-                            potentialMoves.push({
-                                studentName: row[nameIndex] || `Student in row ${j + 1}`,
-                                age: age,
-                                currentSheet: sheetName,
-                                currentSheetId: currentSheetInfo.properties.sheetId,
-                                newSheet: nextSheetInfo.properties.title,
-                                rowIndex: j, // 0-indexed row
-                                studentData: row,
-                            });
-                        }
-                    }
-                }
-            } catch (e) {
-                console.log(`Could not parse date for row ${j+1} in ${sheetName}: ${row[dobIndex]}`);
-            }
-        }
-    }
-    return potentialMoves;
-}
-
-async function processGoogleSheet(spreadsheetId, event) {
-    const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-    const moves = await analyzeStudentMoves(spreadsheetId);
-
-    if (moves.length === 0) {
-        event.sender.send('processing-complete', 'No students needed to be moved.');
-        return;
-    }
-
-    const sourceSheetHeaders = {};
-    const targetSheetHeaders = {};
-
-    // 1. Append Students to New Sheets
-    for (const move of moves) {
-        if (!sourceSheetHeaders[move.currentSheet]) {
-            const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.currentSheet });
-            const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
-            sourceSheetHeaders[move.currentSheet] = headerRow || [];
-        }
-        if (!targetSheetHeaders[move.newSheet]) {
-            const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.newSheet });
-            const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
-            targetSheetHeaders[move.newSheet] = headerRow || [];
-        }
-
-        const sourceHeaders = sourceSheetHeaders[move.currentSheet];
-        const targetHeaders = targetSheetHeaders[move.newSheet];
-        
-        const mappedData = targetHeaders.map(targetHeader => {
-            const sourceIndex = sourceHeaders.indexOf(targetHeader);
-            return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
-        });
-
-        await sheets.spreadsheets.values.append({
-            spreadsheetId,
-            range: move.newSheet,
-            valueInputOption: 'USER_ENTERED',
-            resource: { values: [mappedData] },
-        });
-    }
-
-    // 2. Delete Students from Old Sheets
-    const deletionsBySheet = {};
-    for (const move of moves) {
-        if (!deletionsBySheet[move.currentSheetId]) {
-            deletionsBySheet[move.currentSheetId] = [];
-        }
-        // Group row indices by sheet
-        deletionsBySheet[move.currentSheetId].push(move.rowIndex);
-    }
-
-    const deleteRequests = [];
-    for (const sheetId in deletionsBySheet) {
-        // Important: Sort row indices descending to avoid shifting issues during deletion
-        const sortedRows = deletionsBySheet[sheetId].sort((a, b) => b - a);
-        for (const rowIndex of sortedRows) {
-            deleteRequests.push({
-                deleteDimension: {
-                    range: {
-                        sheetId: parseInt(sheetId, 10),
-                        dimension: 'ROWS',
-                        startIndex: rowIndex, 
-                        endIndex: rowIndex + 1,
-                    },
-                },
-            });
-        }
-    }
-
-    if (deleteRequests.length > 0) {
-        await sheets.spreadsheets.batchUpdate({
-            spreadsheetId,
-            resource: { requests: deleteRequests },
-        });
-    }
-    
-    event.sender.send('processing-complete', `Successfully moved ${moves.length} student(s).`);
-}
+// Start the application
+initializeApp();
