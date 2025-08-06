@@ -359,13 +359,14 @@ async function processGoogleSheet(spreadsheetId, event) {
             lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
         }
 
-        // Specify the exact range to append to (after the last row with data)
-        const appendRange = `${move.newSheet}!A${lastRowWithData + 1}`;
+        // Use append with a specific range starting from the last data row
+        const appendRange = `${move.newSheet}!A${lastRowWithData + 1}:Z${lastRowWithData + 1}`;
         
-        await sheets.spreadsheets.values.update({
+        await sheets.spreadsheets.values.append({
             spreadsheetId,
             range: appendRange,
             valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS', // This preserves formatting better
             resource: { values: [mappedData] },
         });
 
