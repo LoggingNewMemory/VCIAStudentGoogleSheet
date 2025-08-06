@@ -311,34 +311,66 @@ async function processGoogleSheet(spreadsheetId, event) {
 
     const sourceSheetHeaders = {};
     const targetSheetHeaders = {};
+    const targetSheetData = {}; // Cache to store full sheet data
 
     // 1. Append Students to New Sheets
     for (const move of moves) {
+        // Get source sheet headers if not cached
         if (!sourceSheetHeaders[move.currentSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.currentSheet });
             const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
             sourceSheetHeaders[move.currentSheet] = headerRow || [];
         }
-        if (!targetSheetHeaders[move.newSheet]) {
+        
+        // Get target sheet data if not cached
+        if (!targetSheetData[move.newSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.newSheet });
-            const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
+            const allRows = res.data.values || [];
+            targetSheetData[move.newSheet] = allRows;
+            
+            // Find and cache headers
+            const headerRow = allRows.find(r => r.includes('DOB'));
             targetSheetHeaders[move.newSheet] = headerRow || [];
         }
 
         const sourceHeaders = sourceSheetHeaders[move.currentSheet];
         const targetHeaders = targetSheetHeaders[move.newSheet];
         
+        // Map data from source to target format
         const mappedData = targetHeaders.map(targetHeader => {
             const sourceIndex = sourceHeaders.indexOf(targetHeader);
             return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
         });
 
-        await sheets.spreadsheets.values.append({
+        // Find the last row with data in the target sheet
+        const targetRows = targetSheetData[move.newSheet];
+        let lastRowWithData = 0;
+        
+        for (let i = targetRows.length - 1; i >= 0; i--) {
+            if (targetRows[i] && targetRows[i].some(cell => cell && cell.toString().trim() !== '')) {
+                lastRowWithData = i + 1; // +1 because we want the row after the last data row
+                break;
+            }
+        }
+        
+        // If no data found, start after potential header row
+        if (lastRowWithData === 0) {
+            const headerRowIndex = targetRows.findIndex(r => r && r.includes('DOB'));
+            lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
+        }
+
+        // Specify the exact range to append to (after the last row with data)
+        const appendRange = `${move.newSheet}!A${lastRowWithData + 1}`;
+        
+        await sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: move.newSheet,
+            range: appendRange,
             valueInputOption: 'USER_ENTERED',
             resource: { values: [mappedData] },
         });
+
+        // Update our cached data to include the new row
+        targetSheetData[move.newSheet][lastRowWithData] = mappedData;
     }
 
     // 2. Delete Students from Old Sheets
