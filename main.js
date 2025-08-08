@@ -286,6 +286,7 @@ async function analyzeStudentMoves(spreadsheetId) {
                                 currentSheet: sheetName,
                                 currentSheetId: currentSheetInfo.properties.sheetId,
                                 newSheet: nextSheetInfo.properties.title,
+                                newSheetId: nextSheetInfo.properties.sheetId,
                                 rowIndex: j, // 0-indexed row
                                 studentData: row,
                             });
@@ -309,11 +310,46 @@ async function processGoogleSheet(spreadsheetId, event) {
         return;
     }
 
+    // Step 1: Delete students from old sheets FIRST (before insertion affects row numbers)
+    const deletionsBySheet = {};
+    for (const move of moves) {
+        if (!deletionsBySheet[move.currentSheetId]) {
+            deletionsBySheet[move.currentSheetId] = [];
+        }
+        deletionsBySheet[move.currentSheetId].push(move.rowIndex);
+    }
+
+    const deleteRequests = [];
+    for (const sheetId in deletionsBySheet) {
+        // Sort row indices descending to avoid shifting issues during deletion
+        const sortedRows = deletionsBySheet[sheetId].sort((a, b) => b - a);
+        for (const rowIndex of sortedRows) {
+            deleteRequests.push({
+                deleteDimension: {
+                    range: {
+                        sheetId: parseInt(sheetId, 10),
+                        dimension: 'ROWS',
+                        startIndex: rowIndex, 
+                        endIndex: rowIndex + 1,
+                    },
+                },
+            });
+        }
+    }
+
+    if (deleteRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            resource: { requests: deleteRequests },
+        });
+    }
+
+    // Step 2: Insert students into new sheets and apply borders
     const sourceSheetHeaders = {};
     const targetSheetHeaders = {};
-    const targetSheetData = {}; // Cache to store full sheet data
+    const targetSheetData = {};
+    const insertedRows = [];
 
-    // 1. Append Students to New Sheets
     for (const move of moves) {
         // Get source sheet headers if not cached
         if (!sourceSheetHeaders[move.currentSheet]) {
@@ -322,7 +358,7 @@ async function processGoogleSheet(spreadsheetId, event) {
             sourceSheetHeaders[move.currentSheet] = headerRow || [];
         }
         
-        // Get target sheet data if not cached
+        // Get target sheet data if not cached (refresh after deletions)
         if (!targetSheetData[move.newSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.newSheet });
             const allRows = res.data.values || [];
@@ -348,7 +384,7 @@ async function processGoogleSheet(spreadsheetId, event) {
         
         for (let i = targetRows.length - 1; i >= 0; i--) {
             if (targetRows[i] && targetRows[i].some(cell => cell && cell.toString().trim() !== '')) {
-                lastRowWithData = i + 1; // +1 because we want the row after the last data row
+                lastRowWithData = i + 1;
                 break;
             }
         }
@@ -366,48 +402,74 @@ async function processGoogleSheet(spreadsheetId, event) {
             spreadsheetId,
             range: appendRange,
             valueInputOption: 'USER_ENTERED',
-            insertDataOption: 'INSERT_ROWS', // This preserves formatting better
+            insertDataOption: 'INSERT_ROWS',
             resource: { values: [mappedData] },
         });
 
-        // Update our cached data to include the new row
+        // Track inserted row for border formatting
+        insertedRows.push({
+            sheetId: move.newSheetId,
+            rowIndex: lastRowWithData, // 0-indexed
+            columnCount: targetHeaders.length
+        });
+
+        // Update cached data to include the new row
         targetSheetData[move.newSheet][lastRowWithData] = mappedData;
     }
 
-    // 2. Delete Students from Old Sheets
-    const deletionsBySheet = {};
-    for (const move of moves) {
-        if (!deletionsBySheet[move.currentSheetId]) {
-            deletionsBySheet[move.currentSheetId] = [];
-        }
-        // Group row indices by sheet
-        deletionsBySheet[move.currentSheetId].push(move.rowIndex);
-    }
-
-    const deleteRequests = [];
-    for (const sheetId in deletionsBySheet) {
-        // Important: Sort row indices descending to avoid shifting issues during deletion
-        const sortedRows = deletionsBySheet[sheetId].sort((a, b) => b - a);
-        for (const rowIndex of sortedRows) {
-            deleteRequests.push({
-                deleteDimension: {
+    // Step 3: Apply borders to newly inserted rows
+    if (insertedRows.length > 0) {
+        const borderRequests = [];
+        
+        for (const row of insertedRows) {
+            borderRequests.push({
+                updateBorders: {
                     range: {
-                        sheetId: parseInt(sheetId, 10),
-                        dimension: 'ROWS',
-                        startIndex: rowIndex, 
-                        endIndex: rowIndex + 1,
+                        sheetId: row.sheetId,
+                        startRowIndex: row.rowIndex,
+                        endRowIndex: row.rowIndex + 1,
+                        startColumnIndex: 0,
+                        endColumnIndex: row.columnCount
                     },
-                },
+                    top: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    },
+                    bottom: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    },
+                    left: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    },
+                    right: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    },
+                    innerHorizontal: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    },
+                    innerVertical: {
+                        style: 'SOLID',
+                        width: 1,
+                        color: { red: 0, green: 0, blue: 0 }
+                    }
+                }
             });
         }
-    }
 
-    if (deleteRequests.length > 0) {
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId,
-            resource: { requests: deleteRequests },
+            resource: { requests: borderRequests },
         });
     }
     
-    event.sender.send('processing-complete', `Successfully moved ${moves.length} student(s).`);
+    event.sender.send('processing-complete', `Successfully moved ${moves.length} student(s) with borders applied.`);
 }
