@@ -372,12 +372,6 @@ async function processGoogleSheet(spreadsheetId, event) {
         const sourceHeaders = sourceSheetHeaders[move.currentSheet];
         const targetHeaders = targetSheetHeaders[move.newSheet];
         
-        // Map data from source to target format
-        const mappedData = targetHeaders.map(targetHeader => {
-            const sourceIndex = sourceHeaders.indexOf(targetHeader);
-            return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
-        });
-
         // Find the last row with data in the target sheet
         const targetRows = targetSheetData[move.newSheet];
         let lastRowWithData = 0;
@@ -394,6 +388,33 @@ async function processGoogleSheet(spreadsheetId, event) {
             const headerRowIndex = targetRows.findIndex(r => r && r.includes('DOB'));
             lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
         }
+
+        // Calculate the next sequential number for the first column
+        let nextNumber = 1;
+        const headerRowIndex = targetRows.findIndex(r => r && r.includes('DOB'));
+        
+        if (headerRowIndex >= 0) {
+            // Count existing data rows (excluding header) to determine next number
+            let dataRowCount = 0;
+            for (let i = headerRowIndex + 1; i < targetRows.length; i++) {
+                if (targetRows[i] && targetRows[i].some(cell => cell && cell.toString().trim() !== '')) {
+                    dataRowCount++;
+                }
+            }
+            nextNumber = dataRowCount + 1;
+        }
+
+        // Map data from source to target format
+        const mappedData = targetHeaders.map((targetHeader, index) => {
+            // For the first column (assumed to be the numbering column), use sequential number
+            if (index === 0) {
+                return nextNumber.toString();
+            }
+            
+            // For other columns, map from source data
+            const sourceIndex = sourceHeaders.indexOf(targetHeader);
+            return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
+        });
 
         // Use append with a specific range starting from the last data row
         const appendRange = `${move.newSheet}!A${lastRowWithData + 1}:Z${lastRowWithData + 1}`;
