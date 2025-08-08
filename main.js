@@ -140,6 +140,21 @@ function getErrorMessage(error) {
     return error.message || 'An unknown error occurred with the Google API.';
 }
 
+// --- Helper function to find essential columns ---
+function findEssentialColumns(row) {
+    const dobIndex = row.findIndex(cell => cell && /^DOB$/i.test(cell.toString().trim()));
+    
+    // Look for name column - prioritize exact matches, then partial matches
+    let nameIndex = row.findIndex(cell => cell && /^name$/i.test(cell.toString().trim()));
+    if (nameIndex === -1) {
+        nameIndex = row.findIndex(cell => cell && /name/i.test(cell.toString()) && !/user/i.test(cell.toString()));
+    }
+    // If still no name column found, assume first column
+    if (nameIndex === -1) nameIndex = 0;
+    
+    return { dobIndex, nameIndex };
+}
+
 // --- IPC Handlers ---
 ipcMain.on('login-with-google', () => {
     const authUrl = oAuth2Client.generateAuthUrl({
@@ -248,19 +263,30 @@ async function analyzeStudentMoves(spreadsheetId) {
 
         let headerRowIndex = -1, dobIndex = -1, nameIndex = -1;
         for (let j = 0; j < rows.length; j++) {
-            if (rows[j] && rows[j].includes('DOB')) {
+            if (rows[j] && rows[j].some(cell => cell && /DOB/i.test(cell.toString()))) {
                 headerRowIndex = j;
-                dobIndex = rows[j].indexOf('DOB');
-                nameIndex = rows[j].findIndex(cell => cell && /name/i.test(cell) && !/user/i.test(cell));
-                if (nameIndex === -1) nameIndex = 0;
+                const essentialColumns = findEssentialColumns(rows[j]);
+                dobIndex = essentialColumns.dobIndex;
+                nameIndex = essentialColumns.nameIndex;
                 break;
             }
         }
-        if (headerRowIndex === -1) continue;
+        
+        // Skip if no DOB column found
+        if (headerRowIndex === -1 || dobIndex === -1) {
+            console.log(`Skipping sheet ${sheetName}: No DOB column found`);
+            continue;
+        }
 
         for (let j = headerRowIndex + 1; j < rows.length; j++) {
             const row = rows[j];
             if (!row || !row[dobIndex]) continue;
+
+            // Check if this row has at least name and DOB
+            const hasName = nameIndex !== -1 && row[nameIndex] && row[nameIndex].toString().trim() !== '';
+            const hasDOB = row[dobIndex] && row[dobIndex].toString().trim() !== '';
+            
+            if (!hasName && !hasDOB) continue; // Skip if missing both essential fields
 
             try {
                 const dob = new Date(row[dobIndex]);
@@ -281,7 +307,7 @@ async function analyzeStudentMoves(spreadsheetId) {
                         const nextSheetInfo = availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
                         if (nextSheetInfo && nextSheetInfo.properties.title !== sheetName) {
                             potentialMoves.push({
-                                studentName: row[nameIndex] || `Student in row ${j + 1}`,
+                                studentName: hasName ? row[nameIndex] : `Student in row ${j + 1}`,
                                 age: age,
                                 currentSheet: sheetName,
                                 currentSheetId: currentSheetInfo.properties.sheetId,
@@ -289,6 +315,7 @@ async function analyzeStudentMoves(spreadsheetId) {
                                 newSheetId: nextSheetInfo.properties.sheetId,
                                 rowIndex: j, // 0-indexed row
                                 studentData: row,
+                                hasOnlyEssentials: !hasName || row.filter(cell => cell && cell.toString().trim() !== '').length <= 2
                             });
                         }
                     }
@@ -354,7 +381,7 @@ async function processGoogleSheet(spreadsheetId, event) {
         // Get source sheet headers if not cached
         if (!sourceSheetHeaders[move.currentSheet]) {
             const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: move.currentSheet });
-            const headerRow = (res.data.values || []).find(r => r.includes('DOB'));
+            const headerRow = (res.data.values || []).find(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
             sourceSheetHeaders[move.currentSheet] = headerRow || [];
         }
         
@@ -365,12 +392,16 @@ async function processGoogleSheet(spreadsheetId, event) {
             targetSheetData[move.newSheet] = allRows;
             
             // Find and cache headers
-            const headerRow = allRows.find(r => r.includes('DOB'));
+            const headerRow = allRows.find(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
             targetSheetHeaders[move.newSheet] = headerRow || [];
         }
 
         const sourceHeaders = sourceSheetHeaders[move.currentSheet];
         const targetHeaders = targetSheetHeaders[move.newSheet];
+        
+        // Find essential column indices for both source and target
+        const sourceEssentials = findEssentialColumns(sourceHeaders);
+        const targetEssentials = findEssentialColumns(targetHeaders);
         
         // Find the last row with data in the target sheet
         const targetRows = targetSheetData[move.newSheet];
@@ -385,13 +416,13 @@ async function processGoogleSheet(spreadsheetId, event) {
         
         // If no data found, start after potential header row
         if (lastRowWithData === 0) {
-            const headerRowIndex = targetRows.findIndex(r => r && r.includes('DOB'));
+            const headerRowIndex = targetRows.findIndex(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
             lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
         }
 
         // Calculate the next sequential number for the first column
         let nextNumber = 1;
-        const headerRowIndex = targetRows.findIndex(r => r && r.includes('DOB'));
+        const headerRowIndex = targetRows.findIndex(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
         
         if (headerRowIndex >= 0) {
             // Count existing data rows (excluding header) to determine next number
@@ -405,15 +436,31 @@ async function processGoogleSheet(spreadsheetId, event) {
         }
 
         // Map data from source to target format
-        const mappedData = targetHeaders.map((targetHeader, index) => {
+        const mappedData = targetHeaders.map((targetHeader, targetIndex) => {
             // For the first column (assumed to be the numbering column), use sequential number
-            if (index === 0) {
+            if (targetIndex === 0 && targetIndex !== targetEssentials.nameIndex && targetIndex !== targetEssentials.dobIndex) {
                 return nextNumber.toString();
             }
             
-            // For other columns, map from source data
-            const sourceIndex = sourceHeaders.indexOf(targetHeader);
-            return sourceIndex !== -1 ? (move.studentData[sourceIndex] || '') : '';
+            // Map essential fields directly
+            if (targetIndex === targetEssentials.nameIndex && sourceEssentials.nameIndex !== -1) {
+                return move.studentData[sourceEssentials.nameIndex] || '';
+            }
+            
+            if (targetIndex === targetEssentials.dobIndex && sourceEssentials.dobIndex !== -1) {
+                return move.studentData[sourceEssentials.dobIndex] || '';
+            }
+            
+            // For other columns, try to map by header name if available
+            if (targetHeader && sourceHeaders.length > 0) {
+                const sourceIndex = sourceHeaders.indexOf(targetHeader);
+                if (sourceIndex !== -1 && move.studentData[sourceIndex]) {
+                    return move.studentData[sourceIndex];
+                }
+            }
+            
+            // Return empty string for unmapped columns
+            return '';
         });
 
         // Use append with a specific range starting from the last data row
@@ -492,5 +539,13 @@ async function processGoogleSheet(spreadsheetId, event) {
         });
     }
     
-    event.sender.send('processing-complete', `Successfully moved ${moves.length} student(s) with borders applied.`);
+    const essentialOnlyCount = moves.filter(m => m.hasOnlyEssentials).length;
+    const regularCount = moves.length - essentialOnlyCount;
+    
+    let message = `Successfully moved ${moves.length} student(s) with borders applied.`;
+    if (essentialOnlyCount > 0) {
+        message += ` (${essentialOnlyCount} with minimal data, ${regularCount} with complete data)`;
+    }
+    
+    event.sender.send('processing-complete', message);
 }
