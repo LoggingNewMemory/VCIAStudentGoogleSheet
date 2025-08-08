@@ -376,6 +376,10 @@ async function processGoogleSheet(spreadsheetId, event) {
     const targetSheetHeaders = {};
     const targetSheetData = {};
     const insertedRows = [];
+    
+    // Track next number and next insertion row for each target sheet
+    const sheetNextNumbers = {};
+    const sheetNextInsertionRows = {};
 
     for (const move of moves) {
         // Get source sheet headers if not cached
@@ -403,43 +407,54 @@ async function processGoogleSheet(spreadsheetId, event) {
         const sourceEssentials = findEssentialColumns(sourceHeaders);
         const targetEssentials = findEssentialColumns(targetHeaders);
         
-        // Find the last row with data in the target sheet
-        const targetRows = targetSheetData[move.newSheet];
-        let lastRowWithData = 0;
-        
-        for (let i = targetRows.length - 1; i >= 0; i--) {
-            if (targetRows[i] && targetRows[i].some(cell => cell && cell.toString().trim() !== '')) {
-                lastRowWithData = i + 1;
-                break;
-            }
-        }
-        
-        // If no data found, start after potential header row
-        if (lastRowWithData === 0) {
+        // Initialize tracking for this target sheet (only once per sheet)
+        if (!sheetNextNumbers[move.newSheet]) {
+            const targetRows = targetSheetData[move.newSheet];
             const headerRowIndex = targetRows.findIndex(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
-            lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
-        }
-
-        // Calculate the next sequential number for the first column
-        let nextNumber = 1;
-        const headerRowIndex = targetRows.findIndex(r => r && r.some(cell => cell && /DOB/i.test(cell.toString())));
-        
-        if (headerRowIndex >= 0) {
-            // Count existing data rows (excluding header) to determine next number
-            let dataRowCount = 0;
-            for (let i = headerRowIndex + 1; i < targetRows.length; i++) {
+            
+            let maxNumber = 0;
+            let lastRowWithData = 0;
+            
+            // Find the highest number in the first column and the last row with data
+            for (let i = targetRows.length - 1; i >= 0; i--) {
                 if (targetRows[i] && targetRows[i].some(cell => cell && cell.toString().trim() !== '')) {
-                    dataRowCount++;
+                    if (lastRowWithData === 0) lastRowWithData = i + 1; // First non-empty row from bottom
+                    
+                    // Check if this row is after the header and has a number in the first column
+                    if (i > headerRowIndex && targetRows[i][0]) {
+                        const cellValue = targetRows[i][0].toString().trim();
+                        const number = parseInt(cellValue, 10);
+                        
+                        // Only consider valid numbers (not text, dates, etc.)
+                        if (!isNaN(number) && number > 0 && cellValue === number.toString()) {
+                            maxNumber = Math.max(maxNumber, number);
+                        }
+                    }
                 }
             }
-            nextNumber = dataRowCount + 1;
+            
+            // If no data found, start after potential header row
+            if (lastRowWithData === 0) {
+                lastRowWithData = headerRowIndex >= 0 ? headerRowIndex + 1 : 1;
+            }
+            
+            // Set next number to be one higher than the maximum found
+            sheetNextNumbers[move.newSheet] = maxNumber + 1;
+            sheetNextInsertionRows[move.newSheet] = lastRowWithData;
         }
+
+        // Use the current next number for this sheet and increment it
+        const currentNumber = sheetNextNumbers[move.newSheet];
+        const insertionRow = sheetNextInsertionRows[move.newSheet];
+        
+        sheetNextNumbers[move.newSheet]++;
+        sheetNextInsertionRows[move.newSheet]++;
 
         // Map data from source to target format
         const mappedData = targetHeaders.map((targetHeader, targetIndex) => {
             // For the first column (assumed to be the numbering column), use sequential number
             if (targetIndex === 0 && targetIndex !== targetEssentials.nameIndex && targetIndex !== targetEssentials.dobIndex) {
-                return nextNumber.toString();
+                return currentNumber.toString();
             }
             
             // Map essential fields directly
@@ -463,8 +478,8 @@ async function processGoogleSheet(spreadsheetId, event) {
             return '';
         });
 
-        // Use append with a specific range starting from the last data row
-        const appendRange = `${move.newSheet}!A${lastRowWithData + 1}:Z${lastRowWithData + 1}`;
+        // Use append with a specific range starting from the tracked insertion row
+        const appendRange = `${move.newSheet}!A${insertionRow + 1}:Z${insertionRow + 1}`;
         
         await sheets.spreadsheets.values.append({
             spreadsheetId,
@@ -477,12 +492,12 @@ async function processGoogleSheet(spreadsheetId, event) {
         // Track inserted row for border formatting
         insertedRows.push({
             sheetId: move.newSheetId,
-            rowIndex: lastRowWithData, // 0-indexed
+            rowIndex: insertionRow, // 0-indexed
             columnCount: targetHeaders.length
         });
 
         // Update cached data to include the new row
-        targetSheetData[move.newSheet][lastRowWithData] = mappedData;
+        targetSheetData[move.newSheet][insertionRow] = mappedData;
     }
 
     // Step 3: Apply borders to newly inserted rows
