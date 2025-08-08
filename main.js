@@ -155,6 +155,39 @@ function findEssentialColumns(row) {
     return { dobIndex, nameIndex };
 }
 
+// --- Helper function to extract year from DOB ---
+function getYearFromDOB(dobString) {
+    try {
+        // Handle various date formats
+        const dobStr = dobString.toString().trim();
+        
+        // Try parsing as a full date first
+        const date = new Date(dobStr);
+        if (!isNaN(date.getTime())) {
+            return date.getFullYear();
+        }
+        
+        // If that fails, try to extract year from common formats
+        // Format like "5-May-2019", "May-5-2019", "2019-05-05", etc.
+        const yearMatch = dobStr.match(/\b(19|20)\d{2}\b/);
+        if (yearMatch) {
+            return parseInt(yearMatch[0], 10);
+        }
+        
+        // If still no match, return null
+        return null;
+    } catch (e) {
+        console.log(`Could not extract year from DOB: ${dobString}`);
+        return null;
+    }
+}
+
+// --- Helper function to calculate age based on birth year ---
+function calculateAgeFromYear(birthYear) {
+    const currentYear = new Date().getFullYear();
+    return currentYear - birthYear;
+}
+
 // --- IPC Handlers ---
 ipcMain.on('login-with-google', () => {
     const authUrl = oAuth2Client.generateAuthUrl({
@@ -242,6 +275,7 @@ async function analyzeStudentMoves(spreadsheetId) {
     const blacklist = ['ALL STUDENTS', 'NEW STUDENTS', 'Sheet4'];
     const availableSheets = allSheets.filter(s => !blacklist.includes(s.properties.title));
 
+    // Updated age ranges based on year-only calculation
     const sheetProgression = [
         { namePattern: /young ws|young w\/i/i, range: { min: 6, max: 8 } },
         { namePattern: /^ws(?!.*young)/i, range: { min: 9, max: 11 } },
@@ -288,40 +322,39 @@ async function analyzeStudentMoves(spreadsheetId) {
             
             if (!hasName && !hasDOB) continue; // Skip if missing both essential fields
 
-            try {
-                const dob = new Date(row[dobIndex]);
-                if (isNaN(dob.getTime())) continue;
+            // Extract year from DOB and calculate age
+            const birthYear = getYearFromDOB(row[dobIndex]);
+            if (birthYear === null) {
+                console.log(`Could not extract year from DOB for row ${j + 1} in ${sheetName}: ${row[dobIndex]}`);
+                continue;
+            }
 
-                const today = new Date();
-                let age = today.getFullYear() - dob.getFullYear();
-                const m = today.getMonth() - dob.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+            const age = calculateAgeFromYear(birthYear);
 
-                if (age > currentLevel.range.max) {
-                    let nextLevelIndex = i + 1;
-                    while (nextLevelIndex < sheetProgression.length && age > sheetProgression[nextLevelIndex].range.max) {
-                        nextLevelIndex++;
-                    }
-                    if (nextLevelIndex < sheetProgression.length) {
-                        const nextLevel = sheetProgression[nextLevelIndex];
-                        const nextSheetInfo = availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
-                        if (nextSheetInfo && nextSheetInfo.properties.title !== sheetName) {
-                            potentialMoves.push({
-                                studentName: hasName ? row[nameIndex] : `Student in row ${j + 1}`,
-                                age: age,
-                                currentSheet: sheetName,
-                                currentSheetId: currentSheetInfo.properties.sheetId,
-                                newSheet: nextSheetInfo.properties.title,
-                                newSheetId: nextSheetInfo.properties.sheetId,
-                                rowIndex: j, // 0-indexed row
-                                studentData: row,
-                                hasOnlyEssentials: !hasName || row.filter(cell => cell && cell.toString().trim() !== '').length <= 2
-                            });
-                        }
+            // Check if student should move to a higher level
+            if (age > currentLevel.range.max) {
+                let nextLevelIndex = i + 1;
+                while (nextLevelIndex < sheetProgression.length && age > sheetProgression[nextLevelIndex].range.max) {
+                    nextLevelIndex++;
+                }
+                if (nextLevelIndex < sheetProgression.length) {
+                    const nextLevel = sheetProgression[nextLevelIndex];
+                    const nextSheetInfo = availableSheets.find(s => nextLevel.namePattern.test(s.properties.title));
+                    if (nextSheetInfo && nextSheetInfo.properties.title !== sheetName) {
+                        potentialMoves.push({
+                            studentName: hasName ? row[nameIndex] : `Student in row ${j + 1}`,
+                            age: age,
+                            birthYear: birthYear,
+                            currentSheet: sheetName,
+                            currentSheetId: currentSheetInfo.properties.sheetId,
+                            newSheet: nextSheetInfo.properties.title,
+                            newSheetId: nextSheetInfo.properties.sheetId,
+                            rowIndex: j, // 0-indexed row
+                            studentData: row,
+                            hasOnlyEssentials: !hasName || row.filter(cell => cell && cell.toString().trim() !== '').length <= 2
+                        });
                     }
                 }
-            } catch (e) {
-                console.log(`Could not parse date for row ${j+1} in ${sheetName}: ${row[dobIndex]}`);
             }
         }
     }
