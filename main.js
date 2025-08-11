@@ -2,10 +2,13 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
+const http = require('http');
+const url = require('url');
 
 // Global reference
 let mainWindow;
 let authWindow;
+let authServer;
 
 // File paths for storing persistent data
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
@@ -24,7 +27,7 @@ try {
     app.quit();
 }
 const { client_secret, client_id } = credentials;
-const REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
+const REDIRECT_URI = 'http://localhost:8080'; // Use specific port
 const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, REDIRECT_URI);
 
 // --- Config & Token Management (Helper Functions) ---
@@ -86,6 +89,62 @@ async function refreshAccessToken() {
     }
 }
 
+// --- OAuth Server Helper ---
+function createAuthServer() {
+    return new Promise((resolve, reject) => {
+        const server = http.createServer((req, res) => {
+            const query = url.parse(req.url, true).query;
+            
+            if (query.code) {
+                // Success - got the authorization code
+                res.writeHead(200, {'Content-Type': 'text/html'});
+                res.end(`
+                    <html>
+                        <body>
+                            <h1>Authorization Successful!</h1>
+                            <p>You can close this window and return to the application.</p>
+                            <script>window.close();</script>
+                        </body>
+                    </html>
+                `);
+                
+                server.close();
+                resolve(query.code);
+            } else if (query.error) {
+                // Error in authorization
+                res.writeHead(400, {'Content-Type': 'text/html'});
+                res.end(`
+                    <html>
+                        <body>
+                            <h1>Authorization Failed</h1>
+                            <p>Error: ${query.error}</p>
+                            <p>You can close this window and try again.</p>
+                        </body>
+                    </html>
+                `);
+                
+                server.close();
+                reject(new Error(query.error));
+            } else {
+                // Unexpected request
+                res.writeHead(404, {'Content-Type': 'text/plain'});
+                res.end('Not found');
+            }
+        });
+        
+        server.listen(8080, 'localhost', () => {
+            console.log('Auth server listening on http://localhost:8080');
+        });
+        
+        server.on('error', (err) => {
+            reject(err);
+        });
+        
+        // Store server reference for cleanup
+        authServer = server;
+    });
+}
+
 // --- Electron Window Management ---
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -124,7 +183,13 @@ function createWindow() {
 }
 
 app.on('ready', createWindow);
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { 
+    // Clean up auth server if it exists
+    if (authServer) {
+        authServer.close();
+    }
+    if (process.platform !== 'darwin') app.quit(); 
+});
 app.on('activate', () => { if (mainWindow === null) createWindow(); });
 
 // --- Google API Helper ---
@@ -305,29 +370,67 @@ async function autoCorrectNumbering(spreadsheetId) {
 }
 
 // --- IPC Handlers ---
-ipcMain.on('login-with-google', () => {
-    const authUrl = oAuth2Client.generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent',
-        scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly'],
-    });
-    authWindow = new BrowserWindow({ width: 600, height: 800, webPreferences: { nodeIntegration: false, contextIsolation: true } });
-    authWindow.loadURL(authUrl);
-    authWindow.on('closed', () => { authWindow = null; });
-});
-
-ipcMain.on('submit-auth-code', async (event, code) => {
-    if (authWindow) authWindow.close();
+ipcMain.on('login-with-google', async () => {
     try {
-        const { tokens } = await oAuth2Client.getToken(code);
-        oAuth2Client.setCredentials(tokens);
-        saveTokens(tokens);
-        mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
+        const authUrl = oAuth2Client.generateAuthUrl({
+            access_type: 'offline',
+            prompt: 'consent',
+            scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly'],
+        });
+
+        // Create and start the auth server
+        const authCodePromise = createAuthServer();
+        
+        // Open the auth URL in a browser window
+        authWindow = new BrowserWindow({ 
+            width: 600, 
+            height: 800, 
+            webPreferences: { 
+                nodeIntegration: false, 
+                contextIsolation: true 
+            } 
+        });
+        
+        authWindow.loadURL(authUrl);
+        authWindow.on('closed', () => { 
+            authWindow = null;
+            // Clean up server if auth window is closed manually
+            if (authServer) {
+                authServer.close();
+                authServer = null;
+            }
+        });
+
+        // Wait for the authorization code
+        try {
+            const code = await authCodePromise;
+            
+            // Close the auth window
+            if (authWindow) {
+                authWindow.close();
+                authWindow = null;
+            }
+            
+            // Exchange the code for tokens
+            const { tokens } = await oAuth2Client.getToken(code);
+            oAuth2Client.setCredentials(tokens);
+            saveTokens(tokens);
+            
+            mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
+            
+        } catch (authError) {
+            console.error('Error during authorization:', authError);
+            mainWindow.webContents.send('google-auth-error', 'Error during authorization. Please try again.');
+        }
+        
     } catch (error) {
-        console.error('Error retrieving access token', error);
-        mainWindow.webContents.send('google-auth-error', 'Error authenticating. The code may be invalid or expired.');
+        console.error('Error starting auth process:', error);
+        mainWindow.webContents.send('google-auth-error', 'Error starting authorization process.');
     }
 });
+
+// Remove the old submit-auth-code handler as it's no longer needed
+// ipcMain.on('submit-auth-code', async (event, code) => { ... });
 
 ipcMain.on('logout', () => {
     clearTokens();
