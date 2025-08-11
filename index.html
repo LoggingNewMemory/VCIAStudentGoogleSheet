@@ -42,7 +42,6 @@
         }
         #test-btn { background-color: #FF9800; }
         #process-btn { background-color: #34A853; }
-        #submit-code-btn { background-color: #EA4335; }
         #status { 
             margin-top: 25px; 
             font-weight: bold; 
@@ -73,10 +72,10 @@
             color: #28a745;
             font-weight: normal;
         }
-        .code-input-section, .spreadsheet-section {
+        .spreadsheet-section {
             display: none;
         }
-        #auth-code-input, #spreadsheet-id-input {
+        #spreadsheet-id-input {
             width: 500px;
             padding: 10px;
             font-size: 16px;
@@ -135,6 +134,16 @@
         .input-label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
         .auto-save-notice { font-size: 12px; color: #666; font-style: italic; margin-top: 5px; }
         .url-helper { font-size: 12px; color: #007bff; margin-top: 5px; }
+        
+        .login-instructions {
+            font-size: 14px;
+            color: #666;
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -147,19 +156,14 @@
             <div class="user-status" id="user-status"></div>
         </div>
         
-        <div class="code-input-section" id="code-input-section">
-            <div class="instructions">
-                <strong>Instructions:</strong>
-                <ol>
-                    <li>A browser window will open with Google's authorization page.</li>
-                    <li>Sign in and grant permissions.</li>
-                    <li>Copy the authorization code provided by Google.</li>
-                    <li>Paste it below and click "Submit Authorization Code".</li>
-                </ol>
-            </div>
-            <input type="text" id="auth-code-input" placeholder="Paste authorization code here..." />
-            <br>
-            <button id="submit-code-btn">Submit Authorization Code</button>
+        <div class="login-instructions" id="login-instructions">
+            <strong>Login Instructions:</strong>
+            <ol style="text-align: left; margin: 10px 0;">
+                <li>Click "Login with Google" above</li>
+                <li>A browser window will open with Google's authorization page</li>
+                <li>Sign in and grant permissions</li>
+                <li>The window will close automatically when complete</li>
+            </ol>
         </div>
     </div>
     

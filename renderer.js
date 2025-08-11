@@ -5,11 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const testBtn = document.getElementById('test-btn');
     const processBtn = document.getElementById('process-btn');
     const statusDiv = document.getElementById('status');
-    const codeInputSection = document.getElementById('code-input-section');
     const spreadsheetSection = document.getElementById('spreadsheet-section');
-    const authCodeInput = document.getElementById('auth-code-input');
     const spreadsheetIdInput = document.getElementById('spreadsheet-id-input');
-    const submitCodeBtn = document.getElementById('submit-code-btn');
     const spreadsheetInfo = document.getElementById('spreadsheet-info');
     const warningInfo = document.getElementById('warning-info');
     const errorInfo = document.getElementById('error-info');
@@ -17,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const movesPreview = document.getElementById('moves-preview');
     const movesList = document.getElementById('moves-list');
     const userStatus = document.getElementById('user-status');
+    const loginInstructions = document.getElementById('login-instructions');
     
     let pendingMoves = [];
 
@@ -50,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (authenticated) {
             loginBtn.style.display = 'none';
             logoutBtn.style.display = 'inline-block';
-            codeInputSection.style.display = 'none';
+            loginInstructions.style.display = 'none';
             spreadsheetSection.style.display = 'block';
             userStatus.textContent = '✓ Logged in';
             statusDiv.textContent = 'Ready to work with spreadsheets!';
@@ -61,8 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
             loginBtn.style.display = 'inline-block';
             logoutBtn.style.display = 'none';
             spreadsheetSection.style.display = 'none';
+            loginInstructions.style.display = 'none';
             userStatus.textContent = '';
-            authCodeInput.value = '';
             hideAllInfoBoxes();
             statusDiv.textContent = 'Please log in to continue.';
         }
@@ -97,30 +95,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loginBtn.addEventListener('click', () => {
-        statusDiv.textContent = 'Opening Google login...';
-        codeInputSection.style.display = 'block';
-        loginBtn.style.display = 'none';
+        statusDiv.textContent = 'Opening Google login in your browser...';
+        loginBtn.disabled = true;
+        loginInstructions.style.display = 'block';
         window.electronAPI.loginWithGoogle();
     });
 
     logoutBtn.addEventListener('click', () => {
         statusDiv.textContent = 'Logging out...';
         window.electronAPI.logout();
-    });
-
-    submitCodeBtn.addEventListener('click', () => {
-        const authCode = authCodeInput.value.trim();
-        if (!authCode) {
-            statusDiv.textContent = 'Please enter the authorization code.';
-            return;
-        }
-        statusDiv.textContent = 'Processing authorization code...';
-        submitCodeBtn.disabled = true;
-        window.electronAPI.submitAuthCode(authCode);
-    });
-
-    authCodeInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') submitCodeBtn.click();
     });
 
     testBtn.addEventListener('click', () => {
@@ -166,14 +149,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.electronAPI.receiveGoogleAuthSuccess((message) => {
         statusDiv.textContent = message;
         updateUI(true, spreadsheetIdInput.value);
-        submitCodeBtn.disabled = false;
+        loginBtn.disabled = false;
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
         statusDiv.textContent = `Error: ${message}`;
-        submitCodeBtn.disabled = false;
-        loginBtn.style.display = 'block';
-        codeInputSection.style.display = 'none';
+        loginBtn.disabled = false;
+        loginInstructions.style.display = 'none';
     });
 
     window.electronAPI.receiveLogoutComplete(() => {
