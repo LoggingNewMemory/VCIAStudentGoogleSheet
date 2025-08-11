@@ -188,6 +188,122 @@ function calculateAgeFromYear(birthYear) {
     return currentYear - birthYear;
 }
 
+// --- Helper function to renumber the "No." column in all sheets ---
+async function autoCorrectNumbering(spreadsheetId) {
+    const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
+    const sheetMetadata = await sheets.spreadsheets.get({ spreadsheetId });
+    const allSheets = sheetMetadata.data.sheets;
+    
+    // Only process sheets that are not in the blacklist
+    const blacklist = ['ALL STUDENTS', 'NEW STUDENTS', 'Sheet4'];
+    const sheetsToCorrect = allSheets.filter(s => !blacklist.includes(s.properties.title));
+    
+    const updateRequests = [];
+    
+    for (const sheetInfo of sheetsToCorrect) {
+        const sheetName = sheetInfo.properties.title;
+        const sheetId = sheetInfo.properties.sheetId;
+        
+        try {
+            // Get all data from the sheet
+            const response = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range: `${sheetName}!A:Z`
+            });
+            
+            const rows = response.data.values || [];
+            if (rows.length === 0) continue;
+            
+            // Find the header row (contains DOB)
+            let headerRowIndex = -1;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i] && rows[i].some(cell => cell && /DOB/i.test(cell.toString()))) {
+                    headerRowIndex = i;
+                    break;
+                }
+            }
+            
+            if (headerRowIndex === -1) {
+                console.log(`Skipping sheet ${sheetName}: No DOB column found`);
+                continue;
+            }
+            
+            // Check if the first column should be numbered (not a name or DOB column)
+            const headerRow = rows[headerRowIndex];
+            const essentials = findEssentialColumns(headerRow);
+            
+            // Only renumber if the first column is not the name or DOB column
+            const shouldRenumber = (0 !== essentials.nameIndex && 0 !== essentials.dobIndex);
+            
+            if (!shouldRenumber) {
+                console.log(`Skipping sheet ${sheetName}: First column appears to be name or DOB`);
+                continue;
+            }
+            
+            // Find all data rows (after header) that have content
+            const dataRows = [];
+            for (let i = headerRowIndex + 1; i < rows.length; i++) {
+                if (rows[i] && rows[i].some(cell => cell && cell.toString().trim() !== '')) {
+                    dataRows.push({
+                        rowIndex: i,
+                        data: rows[i]
+                    });
+                }
+            }
+            
+            if (dataRows.length === 0) continue;
+            
+            // Create update requests to renumber the first column
+            for (let i = 0; i < dataRows.length; i++) {
+                const newNumber = (i + 1).toString();
+                const rowIndex = dataRows[i].rowIndex;
+                
+                updateRequests.push({
+                    updateCells: {
+                        range: {
+                            sheetId: sheetId,
+                            startRowIndex: rowIndex,
+                            endRowIndex: rowIndex + 1,
+                            startColumnIndex: 0,
+                            endColumnIndex: 1
+                        },
+                        rows: [{
+                            values: [{
+                                userEnteredValue: {
+                                    stringValue: newNumber
+                                }
+                            }]
+                        }],
+                        fields: 'userEnteredValue'
+                    }
+                });
+            }
+            
+            console.log(`Prepared ${dataRows.length} numbering updates for sheet: ${sheetName}`);
+            
+        } catch (error) {
+            console.error(`Error processing sheet ${sheetName} for numbering correction:`, error);
+        }
+    }
+    
+    // Execute all updates in batches to avoid API limits
+    if (updateRequests.length > 0) {
+        const batchSize = 100; // Google Sheets API limit
+        for (let i = 0; i < updateRequests.length; i += batchSize) {
+            const batch = updateRequests.slice(i, i + batchSize);
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                resource: { requests: batch }
+            });
+        }
+        
+        console.log(`Applied ${updateRequests.length} numbering corrections across all sheets`);
+        return updateRequests.length;
+    }
+    
+    return 0;
+}
+
 // --- IPC Handlers ---
 ipcMain.on('login-with-google', () => {
     const authUrl = oAuth2Client.generateAuthUrl({
@@ -587,12 +703,20 @@ async function processGoogleSheet(spreadsheetId, event) {
         });
     }
     
+    // Step 4: Auto-correct numbering in all sheets
+    console.log('Starting auto-correction of numbering...');
+    const correctionCount = await autoCorrectNumbering(spreadsheetId);
+    
     const essentialOnlyCount = moves.filter(m => m.hasOnlyEssentials).length;
     const regularCount = moves.length - essentialOnlyCount;
     
     let message = `Successfully moved ${moves.length} student(s) with borders applied.`;
     if (essentialOnlyCount > 0) {
         message += ` (${essentialOnlyCount} with minimal data, ${regularCount} with complete data)`;
+    }
+    
+    if (correctionCount > 0) {
+        message += ` Auto-corrected ${correctionCount} numbering entries.`;
     }
     
     event.sender.send('processing-complete', message);
