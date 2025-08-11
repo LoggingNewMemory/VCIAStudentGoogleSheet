@@ -77,7 +77,7 @@
             display: none;
         }
         #auth-code-input, #spreadsheet-id-input {
-            width: 400px;
+            width: 500px;
             padding: 10px;
             font-size: 16px;
             border: 2px solid #ddd;
@@ -90,6 +90,16 @@
             color: #666;
             margin: 10px 0;
             text-align: left;
+        }
+        .example-url {
+            font-size: 12px;
+            color: #888;
+            margin: 5px 0;
+            padding: 8px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            word-break: break-all;
+            font-family: monospace;
         }
         .info-box {
             border-radius: 4px;
@@ -124,6 +134,7 @@
         .input-section { margin: 15px 0; }
         .input-label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
         .auto-save-notice { font-size: 12px; color: #666; font-style: italic; margin-top: 5px; }
+        .url-helper { font-size: 12px; color: #007bff; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -156,13 +167,16 @@
         <h3>Spreadsheet Configuration</h3>
         
         <div class="input-section">
-            <label class="input-label" for="spreadsheet-id-input">Google Sheets ID:</label>
+            <label class="input-label" for="spreadsheet-id-input">Google Sheets URL or ID:</label>
             <div class="instructions">
-                You can find this in the URL of your Google Sheet:<br>
-                <code>https://docs.google.com/spreadsheets/d/<strong>YOUR_SHEET_ID</strong>/edit</code>
+                <strong>Easy way:</strong> Just paste the full Google Sheets URL from your browser:<br>
             </div>
-            <input type="text" id="spreadsheet-id-input" placeholder="Enter Google Sheets ID" />
-            <div class="auto-save-notice">✓ Automatically saved as you type</div>
+            <div class="example-url">
+                Example: https://docs.google.com/spreadsheets/d/1j244lEDm0O-XUdXmt8k-1NUR3eiYP6YdD9NFbcgBcXQ/edit
+            </div>
+            <input type="text" id="spreadsheet-id-input" placeholder="Paste your Google Sheets URL here (or just the ID)" />
+            <div class="auto-save-notice">✓ Automatically extracts and saves the ID as you type</div>
+            <div class="url-helper">💡 The program will automatically extract the ID from any Google Sheets URL you paste</div>
         </div>
         
         <div style="margin: 20px 0;">

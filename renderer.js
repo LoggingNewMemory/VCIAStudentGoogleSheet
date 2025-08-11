@@ -29,6 +29,23 @@ document.addEventListener('DOMContentLoaded', () => {
         postProcessingInfo.style.display = 'none';
     }
 
+    function extractSpreadsheetId(input) {
+        const trimmedInput = input.trim();
+        
+        // If it looks like a URL, extract the ID
+        if (trimmedInput.includes('docs.google.com/spreadsheets')) {
+            const match = trimmedInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+            return match ? match[1] : null;
+        }
+        
+        // If it's already just an ID (no slashes or dots), return as is
+        if (trimmedInput && !trimmedInput.includes('/') && !trimmedInput.includes('.')) {
+            return trimmedInput;
+        }
+        
+        return null;
+    }
+
     function updateUI(authenticated, spreadsheetId = '') {
         if (authenticated) {
             loginBtn.style.display = 'none';
@@ -53,7 +70,30 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- Event Listeners ---
     spreadsheetIdInput.addEventListener('input', () => {
-        window.electronAPI.saveSpreadsheetId(spreadsheetIdInput.value.trim());
+        const input = spreadsheetIdInput.value.trim();
+        const extractedId = extractSpreadsheetId(input);
+        
+        if (extractedId) {
+            // Update the input field to show just the ID for clarity
+            spreadsheetIdInput.value = extractedId;
+            window.electronAPI.saveSpreadsheetId(extractedId);
+        } else if (input === '') {
+            // Clear the saved ID if input is empty
+            window.electronAPI.saveSpreadsheetId('');
+        }
+    });
+
+    spreadsheetIdInput.addEventListener('paste', (e) => {
+        // Small delay to let the paste complete, then process
+        setTimeout(() => {
+            const input = spreadsheetIdInput.value.trim();
+            const extractedId = extractSpreadsheetId(input);
+            
+            if (extractedId && extractedId !== input) {
+                spreadsheetIdInput.value = extractedId;
+                window.electronAPI.saveSpreadsheetId(extractedId);
+            }
+        }, 10);
     });
 
     loginBtn.addEventListener('click', () => {
@@ -84,11 +124,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     testBtn.addEventListener('click', () => {
-        const spreadsheetId = spreadsheetIdInput.value.trim();
+        const input = spreadsheetIdInput.value.trim();
+        const spreadsheetId = extractSpreadsheetId(input) || input;
+        
         if (!spreadsheetId) {
-            statusDiv.textContent = 'Please enter a spreadsheet ID.';
+            statusDiv.textContent = 'Please enter a valid spreadsheet URL or ID.';
             return;
         }
+        
+        // Update the input field to show the extracted ID
+        if (spreadsheetId !== input) {
+            spreadsheetIdInput.value = spreadsheetId;
+        }
+        
         statusDiv.textContent = 'Testing spreadsheet access...';
         hideAllInfoBoxes();
         processBtn.style.display = 'none';
@@ -97,7 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     processBtn.addEventListener('click', () => {
-        const spreadsheetId = spreadsheetIdInput.value.trim();
+        const input = spreadsheetIdInput.value.trim();
+        const spreadsheetId = extractSpreadsheetId(input) || input;
+        
         if (pendingMoves.length === 0) {
             statusDiv.textContent = 'No moves to process.';
             return;
@@ -191,7 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
         testBtn.disabled = false;
         hideAllInfoBoxes();
         
-        const spreadsheetId = spreadsheetIdInput.value.trim();
+        const input = spreadsheetIdInput.value.trim();
+        const spreadsheetId = extractSpreadsheetId(input) || input;
         const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/`;
 
         postProcessingInfo.innerHTML = `
