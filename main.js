@@ -384,6 +384,12 @@ ipcMain.on('login-with-google', async () => {
             scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/userinfo.email'],
         });
 
+        // Clean up any existing auth server
+        if (authServer) {
+            authServer.close();
+            authServer = null;
+        }
+
         // Create and start the auth server
         const authCodePromise = createAuthServer();
         
@@ -398,11 +404,21 @@ ipcMain.on('login-with-google', async () => {
         });
         
         authWindow.loadURL(authUrl);
+        
+        // Handle auth window being closed manually
         authWindow.on('closed', () => { 
+            console.log('Auth window was closed');
             authWindow = null;
+            
+            // Clean up auth server
             if (authServer) {
                 authServer.close();
                 authServer = null;
+            }
+            
+            // Re-enable login button and hide instructions
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('google-auth-cancelled');
             }
         });
 
@@ -433,6 +449,13 @@ ipcMain.on('login-with-google', async () => {
 
         } catch (authError) {
             console.error('Error during authorization:', authError);
+            
+            // Clean up auth window if still open
+            if (authWindow) {
+                authWindow.close();
+                authWindow = null;
+            }
+            
             mainWindow.webContents.send('google-auth-error', 'Error during authorization. Please try again.');
         }
         

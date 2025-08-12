@@ -12,11 +12,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // --- Event Listeners from Main to Renderer ---
     // Auth
     receiveRestoreSession: (callback) => ipcRenderer.on('restore-session', (event, data) => callback(data)),
-    receiveGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, message) => callback(message)),
+    receiveGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, data) => callback(data)),
     receiveGoogleAuthError: (callback) => ipcRenderer.on('google-auth-error', (event, message) => callback(message)),
+    receiveGoogleAuthCancelled: (callback) => ipcRenderer.on('google-auth-cancelled', (event) => callback()),
     receiveLogoutComplete: (callback) => ipcRenderer.on('logout-complete', (event) => callback()),
     receiveAuthExpired: (callback) => ipcRenderer.on('auth-expired', (event) => callback()),
-    receiveGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, data) => callback(data)),
     
     // Spreadsheet Test
     receiveTestAccessSuccess: (callback) => ipcRenderer.on('test-access-success', (event, data) => callback(data)),

@@ -147,14 +147,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // --- Electron API Listeners ---
+
+    window.electronAPI.receiveGoogleAuthCancelled(() => {
+    statusDiv.textContent = 'Login cancelled. You can try again.';
+    loginBtn.disabled = false;
+    loginInstructions.style.display = 'none';
+    });
+
     window.electronAPI.receiveRestoreSession((data) => {
         updateUI(data.authenticated, data.spreadsheetId, data.userEmail);
     });
 
-    window.electronAPI.receiveGoogleAuthSuccess((message) => {
-        statusDiv.textContent = message;
-        updateUI(true, spreadsheetIdInput.value);
-        loginBtn.disabled = false;
+    window.electronAPI.receiveGoogleAuthSuccess((data) => {
+    statusDiv.textContent = data.message || 'Successfully authenticated with Google!';
+    updateUI(true, spreadsheetIdInput.value, data.userEmail);
+    loginBtn.disabled = false;
+    loginInstructions.style.display = 'none';
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
