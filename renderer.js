@@ -5,7 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const testBtn = document.getElementById('test-btn');
     const processBtn = document.getElementById('process-btn');
     const statusDiv = document.getElementById('status');
-    const spreadsheetSection = document.getElementById('spreadsheet-section');
+    const loginSection = document.getElementById('login-section');
+    const authenticatedSection = document.getElementById('authenticated-section');
     const spreadsheetIdInput = document.getElementById('spreadsheet-id-input');
     const spreadsheetInfo = document.getElementById('spreadsheet-info');
     const warningInfo = document.getElementById('warning-info');
@@ -15,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const movesList = document.getElementById('moves-list');
     const userStatus = document.getElementById('user-status');
     const loginInstructions = document.getElementById('login-instructions');
+    const username = document.getElementById('username');
     
     let pendingMoves = [];
 
@@ -44,21 +46,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function updateUI(authenticated, spreadsheetId = '') {
+    function updateUI(authenticated, spreadsheetId = '', userEmail = '') {
         if (authenticated) {
-            loginBtn.style.display = 'none';
-            logoutBtn.style.display = 'inline-block';
-            loginInstructions.style.display = 'none';
-            spreadsheetSection.style.display = 'block';
+            loginSection.style.display = 'none';
+            authenticatedSection.style.display = 'block';
             userStatus.textContent = '✓ Logged in';
             statusDiv.textContent = 'Ready to work with spreadsheets!';
+            
+            // Update username display
+            if (userEmail) {
+                username.textContent = userEmail;
+            }
+            
             if (spreadsheetId) {
                 spreadsheetIdInput.value = spreadsheetId;
             }
         } else {
-            loginBtn.style.display = 'inline-block';
-            logoutBtn.style.display = 'none';
-            spreadsheetSection.style.display = 'none';
+            loginSection.style.display = 'block';
+            authenticatedSection.style.display = 'none';
             loginInstructions.style.display = 'none';
             userStatus.textContent = '';
             hideAllInfoBoxes();
@@ -143,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- Electron API Listeners ---
     window.electronAPI.receiveRestoreSession((data) => {
-        updateUI(data.authenticated, data.spreadsheetId);
+        updateUI(data.authenticated, data.spreadsheetId, data.userEmail);
     });
 
     window.electronAPI.receiveGoogleAuthSuccess((message) => {

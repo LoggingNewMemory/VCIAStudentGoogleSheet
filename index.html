@@ -4,203 +4,492 @@
     <meta charset="UTF-8">
     <title>Student Spreadsheet Manager</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            margin: 20px; 
-            text-align: center; 
-            max-width: 700px;
-            margin: 0 auto;
+        @font-face {
+            font-family: 'Gilmer';
+            src: url('assets/fonts/Gilmer-Regular.ttf') format('truetype');
+            font-weight: 400;
+        }
+        @font-face {
+            font-family: 'Gilmer';
+            src: url('assets/fonts/Gilmer-Medium.ttf') format('truetype');
+            font-weight: 500;
+        }
+        @font-face {
+            font-family: 'Gilmer';
+            src: url('assets/fonts/Gilmer-Bold.ttf') format('truetype');
+            font-weight: 700;
+        }
+        @font-face {
+            font-family: 'Gilmer';
+            src: url('assets/fonts/Gilmer-Heavy.ttf') format('truetype');
+            font-weight: 800;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Gilmer', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%);
+            background-image: url('assets/bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .container {
+            width: 1280px;
+            height: 720px;
+            display: flex;
+            align-items: stretch;
+            gap: 40px;
             padding: 20px;
-            background-color: #f8f9fa;
+            box-sizing: border-box;
         }
-        h1 { color: #333; margin-bottom: 30px; }
-        button { 
-            font-size: 16px; 
-            padding: 12px 24px; 
-            cursor: pointer; 
-            border-radius: 8px;
-            border: none;
+
+        /* Left Panel - Logo and Time */
+        .left-panel {
+            width: 360px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .time-display {
+            font-size: 72px;
+            font-weight: 800;
+            margin-bottom: 10px;
+            text-align: center;
+            line-height: 1;
+        }
+
+        .time-display .hour {
+            color: #6B46C1;
+        }
+
+        .time-display .minute {
+            color: #F97316;
+        }
+
+        .date-display {
+            font-size: 24px;
+            color: #F97316;
+            font-weight: 600;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            width: 200px;
+            height: 200px;
+            object-fit: contain;
+        }
+
+        /* Right Panel - Main Content */
+        .right-panel {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+            max-height: 680px;
+        }
+
+        /* Login Section */
+        .login-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .login-section h1 {
+            font-size: 48px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 30px;
+        }
+
+        .login-section h1 .google {
+            background: linear-gradient(45deg, #4285F4, #EA4335, #FBBC05, #34A853);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .login-btn {
+            background: linear-gradient(135deg, #7C3AED, #A855F7);
             color: white;
-            margin: 10px;
-            transition: background-color 0.3s, opacity 0.3s;
+            border: none;
+            border-radius: 15px;
+            padding: 15px 60px;
+            font-size: 24px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+            margin: 20px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        button:hover:not(:disabled) {
-            opacity: 0.8;
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(124, 58, 237, 0.4);
         }
-        button:disabled {
+
+        /* Authenticated Section */
+        .authenticated-section {
+            display: none;
+        }
+
+        .greeting {
+            font-size: 32px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 30px;
+        }
+
+        .greeting .username {
+            color: #7C3AED;
+        }
+
+        .subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-bottom: 30px;
+            font-weight: 500;
+        }
+
+        .input-container {
+            margin-bottom: 30px;
+        }
+
+        .spreadsheet-input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 3px solid #F97316;
+            border-radius: 12px;
+            font-size: 16px;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .spreadsheet-input:focus {
+            border-color: #EA580C;
+            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .btn-test {
+            background: #6B46C1;
+            color: white;
+            box-shadow: 0 4px 15px rgba(107, 70, 193, 0.3);
+        }
+
+        .btn-test:hover {
+            background: #553C9A;
+            transform: translateY(-1px);
+        }
+
+        .btn-process {
+            background: #F97316;
+            color: white;
+            box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3);
+            display: none;
+        }
+
+        .btn-process:hover {
+            background: #EA580C;
+            transform: translateY(-1px);
+        }
+
+        .btn-logout {
+            background: #DC2626;
+            color: white;
+            border: 2px solid #DC2626;
+            box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
+        }
+
+        .btn-logout:hover {
+            background: #B91C1C;
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+            transform: none !important;
         }
-        a { color: #007bff; }
-        a:hover { color: #0056b3; }
-        #login-btn { background-color: #4285F4; }
-        #logout-btn { 
-            background-color: #dc3545; 
-            display: none; 
-            font-size: 14px;
-            padding: 8px 16px;
+
+        /* Logs Section */
+        .logs-section {
+            margin-top: 30px;
         }
-        #test-btn { background-color: #FF9800; }
-        #process-btn { background-color: #34A853; }
-        #status { 
-            margin-top: 25px; 
-            font-weight: bold; 
-            font-size: 18px; 
-            min-height: 25px;
-            padding: 15px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+        .logs-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 20px;
+            text-align: center;
         }
-        .auth-section, .spreadsheet-section {
-            margin: 20px 0;
+
+        .logs-container {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
             padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .auth-header {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        .user-status {
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
             font-size: 14px;
-            color: #28a745;
-            font-weight: normal;
+            line-height: 1.4;
         }
-        .spreadsheet-section {
-            display: none;
-        }
-        #spreadsheet-id-input {
-            width: 500px;
-            padding: 10px;
-            font-size: 16px;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            margin: 10px;
-            max-width: 90%;
-        }
-        .instructions {
+
+        /* Footer */
+        .footer {
+            text-align: center;
             font-size: 14px;
             color: #666;
-            margin: 10px 0;
-            text-align: left;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
         }
-        .example-url {
-            font-size: 12px;
-            color: #888;
-            margin: 5px 0;
-            padding: 8px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            word-break: break-all;
-            font-family: monospace;
-        }
+
+        /* Info boxes */
         .info-box {
-            border-radius: 4px;
-            padding: 10px 20px;
-            margin: 10px 0;
-            text-align: left;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin: 15px 0;
             display: none;
         }
-        .spreadsheet-info { background-color: #e8f5e8; border: 1px solid #4caf50; }
-        .error-info { background-color: #ffebee; border: 1px solid #f44336; }
-        .warning-info { background-color: #fff3cd; border: 1px solid #ffc107; }
-        .revert-info { background-color: #d1ecf1; border: 1px solid #bee5eb; }
+
+        .spreadsheet-info { 
+            background-color: #dcfce7; 
+            border: 2px solid #22c55e; 
+            color: #166534;
+        }
+
+        .error-info { 
+            background-color: #fef2f2; 
+            border: 2px solid #ef4444; 
+            color: #991b1b;
+        }
+
+        .warning-info { 
+            background-color: #fefce8; 
+            border: 2px solid #eab308; 
+            color: #92400e;
+        }
 
         .moves-preview {
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 15px 0;
-            text-align: left;
+            background-color: #f1f5f9;
+            border: 2px solid #64748b;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
             max-height: 300px;
             overflow-y: auto;
         }
+
         .move-item {
-            padding: 8px;
-            border-bottom: 1px solid #e9ecef;
-            background-color: white;
-            margin: 5px 0;
-            border-radius: 4px;
-        }
-        .move-item:last-child { border-bottom: none; }
-        .input-section { margin: 15px 0; }
-        .input-label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
-        .auto-save-notice { font-size: 12px; color: #666; font-style: italic; margin-top: 5px; }
-        .url-helper { font-size: 12px; color: #007bff; margin-top: 5px; }
-        
-        .login-instructions {
-            font-size: 14px;
-            color: #666;
-            margin: 15px 0;
             padding: 10px;
+            border-bottom: 1px solid #cbd5e1;
+            background-color: white;
+            margin: 8px 0;
+            border-radius: 8px;
+        }
+
+        .move-item:last-child { 
+            border-bottom: none; 
+        }
+
+        /* Status display */
+        #status {
+            margin-bottom: 20px;
+            padding: 15px 20px;
+            border-radius: 12px;
             background-color: #f8f9fa;
-            border-radius: 4px;
-            display: none;
+            border: 2px solid #e9ecef;
+            font-size: 16px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        /* User status indicator */
+        #user-status {
+            color: #22c55e;
+            font-weight: 600;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        /* Responsive - maintain 1280x720 aspect ratio */
+        @media (max-width: 1280px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                transform: scale(0.8);
+                transform-origin: center center;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                transform: scale(0.7);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                transform: scale(0.6);
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Student Spreadsheet Manager</h1>
-    
-    <div class="auth-section" id="auth-section">
-        <div class="auth-header">
-            <button id="login-btn">Login with Google</button>
-            <button id="logout-btn">Logout</button>
-            <div class="user-status" id="user-status"></div>
-        </div>
-        
-        <div class="login-instructions" id="login-instructions">
-            <strong>Login Instructions:</strong>
-            <ol style="text-align: left; margin: 10px 0;">
-                <li>Click "Login with Google" above</li>
-                <li>A browser window will open with Google's authorization page</li>
-                <li>Sign in and grant permissions</li>
-                <li>The window will close automatically when complete</li>
-            </ol>
-        </div>
-    </div>
-    
-    <div class="spreadsheet-section" id="spreadsheet-section">
-        <h3>Spreadsheet Configuration</h3>
-        
-        <div class="input-section">
-            <label class="input-label" for="spreadsheet-id-input">Google Sheets URL or ID:</label>
-            <div class="instructions">
-                <strong>Easy way:</strong> Just paste the full Google Sheets URL from your browser:<br>
+    <div class="container">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <div class="time-section">
+                <div class="time-display">
+                    <span class="hour" id="hours">11</span>:<span class="minute" id="minutes">35</span>
+                </div>
+                <div class="date-display" id="date">8 August, 2025</div>
             </div>
-            <div class="example-url">
-                Example: https://docs.google.com/spreadsheets/d/1j244lEDm0O-XUdXmt8k-1NUR3eiYP6YdD9NFbcgBcXQ/edit
-            </div>
-            <input type="text" id="spreadsheet-id-input" placeholder="Paste your Google Sheets URL here (or just the ID)" />
-            <div class="auto-save-notice">✓ Automatically extracts and saves the ID as you type</div>
-            <div class="url-helper">💡 The program will automatically extract the ID from any Google Sheets URL you paste</div>
+            <img src="assets/logo.png" alt="VCIA Logo" class="logo">
         </div>
-        
-        <div style="margin: 20px 0;">
-            <button id="test-btn">Test Spreadsheet Access</button>
-            <button id="process-btn" style="display: none;">Process Student Moves</button>
-        </div>
-        
-        <div class="info-box spreadsheet-info" id="spreadsheet-info"></div>
-        <div class="info-box warning-info" id="warning-info"></div>
-        <div class="info-box error-info" id="error-info"></div>
-        <div class="info-box revert-info" id="post-processing-info"></div>
-        
-        <div class="moves-preview" id="moves-preview" style="display:none;">
-            <h4>Proposed Student Moves:</h4>
-            <div id="moves-list"></div>
-        </div>
-    </div>
-    
-    <div id="status">Loading...</div>
 
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <!-- Login Section -->
+            <div class="login-section" id="login-section">
+                <h1>Login With <span class="google">Google</span></h1>
+                <button class="login-btn" id="login-btn">LOGIN HERE</button>
+                
+                <div class="login-instructions" id="login-instructions" style="display: none;">
+                    <p style="margin: 20px 0; color: #666; font-size: 16px;">
+                        <strong>Login Instructions:</strong><br>
+                        1. Click "LOGIN HERE" above<br>
+                        2. A browser window will open with Google's authorization page<br>
+                        3. Sign in and grant permissions<br>
+                        4. The window will close automatically when complete
+                    </p>
+                </div>
+            </div>
+
+            <!-- Authenticated Section -->
+            <div class="authenticated-section" id="authenticated-section">
+                <div id="user-status"></div>
+                <div id="status">Please log in to continue.</div>
+                
+                <div class="greeting">
+                    Shalom, <span class="username" id="username">&lt;Username&gt;</span>
+                </div>
+                <div class="subtitle">Paste The Student Spreadsheet Here</div>
+                
+                <div class="input-container">
+                    <input 
+                        type="text" 
+                        class="spreadsheet-input" 
+                        id="spreadsheet-id-input" 
+                        placeholder="Paste your Google Sheets URL here (or just the ID)"
+                    />
+                    <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                        💡 Example: https://docs.google.com/spreadsheets/d/1j244lEDm0O-XUdXmt8k-1NUR3eiYP6YdD9NFbcgBcXQ/edit
+                    </p>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-test" id="test-btn">Test SpreadSheet Access</button>
+                    <button class="btn btn-process" id="process-btn">Process SpreadSheet</button>
+                    <button class="btn btn-logout" id="logout-btn">Log Out</button>
+                </div>
+
+                <!-- Info Boxes -->
+                <div class="info-box spreadsheet-info" id="spreadsheet-info"></div>
+                <div class="info-box warning-info" id="warning-info"></div>
+                <div class="info-box error-info" id="error-info"></div>
+                <div class="info-box" id="post-processing-info" style="background-color: #dbeafe; border-color: #3b82f6; color: #1e40af;"></div>
+
+                <div class="moves-preview" id="moves-preview">
+                    <h4>Proposed Student Moves:</h4>
+                    <div id="moves-list"></div>
+                </div>
+
+                <div class="logs-section">
+                    <div class="logs-title">[Application Logs]</div>
+                    <div class="logs-container" id="logs-container">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                Victory Student Spreadsheet Program | 2025 Albert Wesley<br>
+                @LoggingNewMemory/VCIAStudentGoogleSheet
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Real-time clock
+        function updateClock() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            
+            document.getElementById('hours').textContent = hours;
+            document.getElementById('minutes').textContent = minutes;
+            
+            const options = { day: 'numeric', month: 'long', year: 'numeric' };
+            document.getElementById('date').textContent = now.toLocaleDateString('en-US', options);
+        }
+
+        // Update clock every second
+        updateClock();
+        setInterval(updateClock, 1000);
+    </script>
+
+    <!-- Load renderer.js -->
     <script src="renderer.js"></script>
 </body>
 </html>

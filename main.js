@@ -149,7 +149,7 @@ function createAuthServer() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 850,
-    height: 750, // Increased height slightly for better visibility of new info box
+    height: 750,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -176,9 +176,13 @@ function createWindow() {
       authenticated = await refreshAccessToken();
     }
     
-    if (!authenticated) clearTokens(); // Clear any invalid/expired tokens
+    if (!authenticated) clearTokens();
 
-    mainWindow.webContents.send('restore-session', { authenticated, spreadsheetId: config.spreadsheetId || '' });
+    mainWindow.webContents.send('restore-session', { 
+        authenticated, 
+        spreadsheetId: config.spreadsheetId || '',
+        userEmail: config.userEmail || ''
+    });
   });
 }
 
@@ -375,7 +379,7 @@ ipcMain.on('login-with-google', async () => {
         const authUrl = oAuth2Client.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
-            scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly'],
+            scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/userinfo.email'],
         });
 
         // Create and start the auth server
@@ -394,30 +398,37 @@ ipcMain.on('login-with-google', async () => {
         authWindow.loadURL(authUrl);
         authWindow.on('closed', () => { 
             authWindow = null;
-            // Clean up server if auth window is closed manually
             if (authServer) {
                 authServer.close();
                 authServer = null;
             }
         });
 
-        // Wait for the authorization code
         try {
             const code = await authCodePromise;
-            
-            // Close the auth window
             if (authWindow) {
                 authWindow.close();
                 authWindow = null;
             }
-            
-            // Exchange the code for tokens
             const { tokens } = await oAuth2Client.getToken(code);
             oAuth2Client.setCredentials(tokens);
             saveTokens(tokens);
-            
-            mainWindow.webContents.send('google-auth-success', 'Successfully authenticated with Google!');
-            
+
+            // Fetch user email after authentication
+            const oauth2 = google.oauth2({ version: 'v2', auth: oAuth2Client });
+            const userInfo = await oauth2.userinfo.get();
+            const userEmail = userInfo.data.email;
+
+            // Save userEmail in config
+            const config = loadConfig();
+            config.userEmail = userEmail;
+            saveConfig(config);
+
+            mainWindow.webContents.send('google-auth-success', {
+                message: 'Successfully authenticated with Google!',
+                userEmail: userEmail
+            });
+
         } catch (authError) {
             console.error('Error during authorization:', authError);
             mainWindow.webContents.send('google-auth-error', 'Error during authorization. Please try again.');

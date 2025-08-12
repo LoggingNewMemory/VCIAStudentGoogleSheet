@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     receiveGoogleAuthError: (callback) => ipcRenderer.on('google-auth-error', (event, message) => callback(message)),
     receiveLogoutComplete: (callback) => ipcRenderer.on('logout-complete', (event) => callback()),
     receiveAuthExpired: (callback) => ipcRenderer.on('auth-expired', (event) => callback()),
+    receiveGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, data) => callback(data)),
     
     // Spreadsheet Test
     receiveTestAccessSuccess: (callback) => ipcRenderer.on('test-access-success', (event, data) => callback(data)),
