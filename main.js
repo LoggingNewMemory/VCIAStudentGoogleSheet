@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
@@ -147,9 +147,11 @@ function createAuthServer() {
 
 // --- Electron Window Management ---
 function createWindow() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize; // Get system resolution
+
   mainWindow = new BrowserWindow({
-    width: 850,
-    height: 750,
+    width: width,
+    height: height,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
