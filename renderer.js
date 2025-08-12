@@ -46,17 +46,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function updateUI(authenticated, spreadsheetId = '', userEmail = '') {
+    function updateUI(authenticated, spreadsheetId = '', name = '') {
         if (authenticated) {
             loginSection.style.display = 'none';
             authenticatedSection.style.display = 'block';
             userStatus.textContent = '✓ Logged in';
             statusDiv.textContent = 'Ready to work with spreadsheets!';
             
-            // Update username display
-            if (userEmail) {
-                username.textContent = userEmail;
-            }
+            // **FIXED**: Always update the username. Use the provided name, or a default if none is available.
+            username.textContent = name || 'User';
             
             if (spreadsheetId) {
                 spreadsheetIdInput.value = spreadsheetId;
@@ -68,6 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
             userStatus.textContent = '';
             hideAllInfoBoxes();
             statusDiv.textContent = 'Please log in to continue.';
+            // Reset username text to its default placeholder on logout
+            username.textContent = '<Username>';
         }
     }
     
@@ -155,12 +155,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.electronAPI.receiveRestoreSession((data) => {
-        updateUI(data.authenticated, data.spreadsheetId, data.userEmail);
+        updateUI(data.authenticated, data.spreadsheetId, data.userName);
     });
 
     window.electronAPI.receiveGoogleAuthSuccess((data) => {
     statusDiv.textContent = data.message || 'Successfully authenticated with Google!';
-    updateUI(true, spreadsheetIdInput.value, data.userEmail);
+    updateUI(true, spreadsheetIdInput.value, data.userName);
     loginBtn.disabled = false;
     loginInstructions.style.display = 'none';
     });

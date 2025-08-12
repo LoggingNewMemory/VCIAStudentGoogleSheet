@@ -37,7 +37,7 @@ function loadConfig() {
             return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
         }
     } catch (error) { console.error('Error loading config:', error); }
-    return { spreadsheetId: '' };
+    return { spreadsheetId: '', userName: '', userEmail: '' };
 }
 
 function saveConfig(config) {
@@ -183,7 +183,7 @@ function createWindow() {
     mainWindow.webContents.send('restore-session', { 
         authenticated, 
         spreadsheetId: config.spreadsheetId || '',
-        userEmail: config.userEmail || ''
+        userName: config.userName || ''
     });
   });
 }
@@ -381,7 +381,7 @@ ipcMain.on('login-with-google', async () => {
         const authUrl = oAuth2Client.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
-            scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/userinfo.email'],
+            scope: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
         });
 
         // Clean up any existing auth server
@@ -432,19 +432,21 @@ ipcMain.on('login-with-google', async () => {
             oAuth2Client.setCredentials(tokens);
             saveTokens(tokens);
 
-            // Fetch user email after authentication
+            // Fetch user info after authentication
             const oauth2 = google.oauth2({ version: 'v2', auth: oAuth2Client });
             const userInfo = await oauth2.userinfo.get();
             const userEmail = userInfo.data.email;
+            const userName = userInfo.data.name;
 
-            // Save userEmail in config
+            // Save userName and userEmail in config
             const config = loadConfig();
             config.userEmail = userEmail;
+            config.userName = userName;
             saveConfig(config);
 
             mainWindow.webContents.send('google-auth-success', {
                 message: 'Successfully authenticated with Google!',
-                userEmail: userEmail
+                userName: userName
             });
 
         } catch (authError) {
