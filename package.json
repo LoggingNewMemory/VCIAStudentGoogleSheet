@@ -1,11 +1,11 @@
 {
-  "name": "student-spreadsheet-manager",
+  "name": "vcia-ssm",
   "version": "1.0.0",
-  "description": "Victory Student Spreadsheet Manager - An Electron app to manage student Google Sheets with age-based class progression",
+  "description": "VCIA Student Spreadsheet Manager",
   "main": "main.js",
   "author": {
     "name": "Albert Wesley",
-    "email": "your-email@example.com",
+    "email": "albert.wesley.dion@gmail.com",
     "url": "https://github.com/LoggingNewMemory"
   },
   "homepage": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet",
@@ -34,8 +34,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.loggingnewmemory.student-spreadsheet-manager",
-    "productName": "Victory SPM",
+    "appId": "victory-ssm",
+    "productName": "Victory SSM",
     "directories": {
       "output": "dist"
     },
@@ -70,8 +70,8 @@
       "category": "Education",
       "icon": "assets/IconLinux.png",
       "desktop": {
-        "Name": "Victory Student Spreadsheet Manager",
-        "Comment": "Manage student Google Sheets with automated class progression",
+        "Name": "Victory SSM",
+        "Comment": "VCIA Student Spreadsheet Manager",
         "Keywords": "education;spreadsheet;students;google-sheets;"
       }
     },
