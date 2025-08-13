@@ -1,48 +1,119 @@
 {
   "name": "student-spreadsheet-manager",
   "version": "1.0.0",
-  "description": "An Electron app to manage student spreadsheets.",
+  "description": "Victory Student Spreadsheet Manager - An Electron app to manage student Google Sheets with age-based class progression",
   "main": "main.js",
+  "author": {
+    "name": "Albert Wesley",
+    "email": "albert.wesley.dion@gmail.com",
+    "url": "https://github.com/LoggingNewMemory"
+  },
+  "homepage": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet.git"
+  },
+  "keywords": [
+    "electron",
+    "google-sheets",
+    "student-management",
+    "education",
+    "spreadsheet",
+    "automation"
+  ],
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist-linux": "electron-builder --linux",
-    "dist-win": "electron-builder --windows"
+    "dev": "electron . --inspect",
+    "build": "electron-builder",
+    "build-linux": "electron-builder --linux",
+    "build-win": "electron-builder --win",
+    "build-all": "electron-builder --linux --win",
+    "dist": "npm run build",
+    "clean": "rimraf dist",
+    "postinstall": "electron-builder install-app-deps"
   },
-    "build": {
-    "appId": "com.kanagawa.yamada.binus.lms",
-    "productName": "Binus LMS",
-    "asar": true,
+  "build": {
+    "appId": "com.loggingnewmemory.student-spreadsheet-manager",
+    "productName": "Victory Student Spreadsheet Manager",
+    "copyright": "Copyright © 2025 Albert Wesley",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "client_secret.json",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "client_secret.json",
+        "to": "client_secret.json"
+      }
+    ],
     "linux": {
       "target": [
-        "AppImage",
-        "deb",
-        "pacman"
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "pacman",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "category": "Education",
-      "icon": "logo/LmsLogo.png"
+      "icon": "assets/IconLinux.png",
+      "desktop": {
+        "Name": "Victory Student Spreadsheet Manager",
+        "Comment": "Manage student Google Sheets with automated class progression",
+        "Keywords": "education;spreadsheet;students;google-sheets;"
+      }
     },
     "win": {
       "target": [
-        "portable",
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32"]
+        }
       ],
-      "icon": "logo/LmsLogo.ico"
+      "icon": "assets/IconWindows.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
-    "mac": {
-      "target": "dmg",
-      "icon": "logo/LmsLogo.icns"
-    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Victory Student Manager"
+    }
 
-  "keywords": [],
-  "author": "Wesley",
-  "homepage": "https://github.com/LoggingNewMemory",
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
   "devDependencies": {
     "electron": "^28.3.3",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^24.13.3",
+    "rimraf": "^5.0.5"
   },
   "dependencies": {
-    "googleapis": "^134.0.0",
-    "xlsx": "^0.18.5"
-  }
+    "googleapis": "^134.0.0"
   }
 }
