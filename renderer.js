@@ -16,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const movesList = document.getElementById('moves-list');
     const authStatus = document.getElementById('auth-status');
     const username = document.getElementById('username');
-    const logsContainer = document.getElementById('logs-container');
     
     let pendingMoves = [];
 
@@ -32,18 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateStatusMessage(message, type = 'info') {
         statusMessage.textContent = message;
         statusMessage.className = `status-message ${type}`;
-    }
-
-    function logMessage(message, type = 'info') {
-        const timestamp = new Date().toLocaleTimeString();
-        const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
-        
-        if (logsContainer.textContent === 'Initializing...') {
-            logsContainer.textContent = '';
-        }
-        
-        logsContainer.textContent += logEntry + '\n';
-        logsContainer.scrollTop = logsContainer.scrollHeight;
     }
 
     function extractSpreadsheetId(input) {
@@ -70,7 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
             loginSection.style.display = 'none';
             authenticatedSection.style.display = 'block';
             username.textContent = name || 'User';
-            logMessage('Successfully authenticated with Google', 'success');
         } else {
             authStatus.textContent = 'Not Logged In';
             authStatus.className = 'status-indicator unauthenticated';
@@ -79,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
             username.textContent = 'User';
             hideAllInfoBoxes();
             updateStatusMessage('Please sign in to continue');
-            logMessage('User logged out or session expired', 'info');
         }
     }
 
@@ -106,7 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update the input field to show just the ID for clarity
             spreadsheetIdInput.value = extractedId;
             window.electronAPI.saveSpreadsheetId(extractedId);
-            logMessage(`Spreadsheet ID saved: ${extractedId}`, 'info');
         } else if (input === '') {
             // Clear the saved ID if input is empty
             window.electronAPI.saveSpreadsheetId('');
@@ -122,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (extractedId && extractedId !== input) {
                 spreadsheetIdInput.value = extractedId;
                 window.electronAPI.saveSpreadsheetId(extractedId);
-                logMessage(`Spreadsheet ID extracted from URL: ${extractedId}`, 'info');
             }
         }, 10);
     });
@@ -130,14 +113,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loginBtn.addEventListener('click', () => {
         updateStatusMessage('Opening Google sign-in...');
         setButtonState(loginBtn, true, 'Signing In...');
-        logMessage('Initiating Google authentication', 'info');
         window.electronAPI.loginWithGoogle();
     });
 
     logoutBtn.addEventListener('click', () => {
         updateStatusMessage('Signing out...');
         setButtonState(logoutBtn, true, 'Signing Out...');
-        logMessage('Logging out user', 'info');
         window.electronAPI.logout();
     });
 
@@ -161,7 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hideAllInfoBoxes();
         processBtn.style.display = 'none';
         setButtonState(testBtn, true, 'Testing...');
-        logMessage(`Testing access to spreadsheet: ${spreadsheetId}`, 'info');
         window.electronAPI.testSpreadsheetAccess(spreadsheetId);
     });
 
@@ -177,7 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatusMessage('Processing spreadsheet... This may take a moment');
         setButtonState(processBtn, true, 'Processing...');
         setButtonState(testBtn, true);
-        logMessage(`Processing ${pendingMoves.length} student moves`, 'info');
         window.electronAPI.processSpreadsheet(spreadsheetId);
     });
     
@@ -186,14 +165,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.electronAPI.receiveGoogleAuthCancelled(() => {
         updateStatusMessage('Sign-in was cancelled. You can try again.');
         setButtonState(loginBtn, false);
-        logMessage('Google authentication cancelled by user', 'warning');
     });
 
     window.electronAPI.receiveRestoreSession((data) => {
         updateAuthStatus(data.authenticated, data.userName);
         if (data.spreadsheetId) {
             spreadsheetIdInput.value = data.spreadsheetId;
-            logMessage(`Session restored with spreadsheet: ${data.spreadsheetId}`, 'success');
         }
     });
 
@@ -201,13 +178,11 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatusMessage('Successfully authenticated with Google!');
         updateAuthStatus(true, data.userName);
         setButtonState(loginBtn, false);
-        logMessage(`Authentication successful for user: ${data.userName}`, 'success');
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
         updateStatusMessage(`Authentication error: ${message}`);
         setButtonState(loginBtn, false);
-        logMessage(`Authentication failed: ${message}`, 'error');
     });
 
     window.electronAPI.receiveLogoutComplete(() => {
@@ -219,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.electronAPI.receiveAuthExpired(() => {
         updateStatusMessage('Your session has expired. Please sign in again.');
         updateAuthStatus(false);
-        logMessage('Session expired, user needs to re-authenticate', 'warning');
     });
 
     window.electronAPI.receiveTestAccessSuccess((data) => {
@@ -248,12 +222,10 @@ document.addEventListener('DOMContentLoaded', () => {
             processBtn.style.display = 'inline-block';
             setButtonState(processBtn, false);
             updateStatusMessage(`Found ${data.potentialMoves.length} student(s) ready to move`);
-            logMessage(`Found ${data.potentialMoves.length} students needing to be moved`, 'info');
         } else {
             pendingMoves = [];
             processBtn.style.display = 'none';
             updateStatusMessage('All students are in their correct age groups!');
-            logMessage('No student moves required - all students in correct groups', 'success');
         }
     });
     
@@ -271,7 +243,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </ol>
         `;
         warningInfo.style.display = 'block';
-        logMessage('Excel format detected, conversion required', 'warning');
     });
 
     window.electronAPI.receiveTestAccessError((message) => {
@@ -280,7 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hideAllInfoBoxes();
         errorInfo.innerHTML = `<h4>Access Error</h4><div>${message}</div>`;
         errorInfo.style.display = 'block';
-        logMessage(`Spreadsheet access error: ${message}`, 'error');
     });
 
     window.electronAPI.receiveProcessingComplete((message) => {
@@ -305,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </ol>
         `;
         postProcessingInfo.style.display = 'block';
-        logMessage(`Processing completed: ${message}`, 'success');
     });
 
     window.electronAPI.receiveProcessingError((message) => {
@@ -316,9 +285,5 @@ document.addEventListener('DOMContentLoaded', () => {
         hideAllInfoBoxes();
         errorInfo.innerHTML = `<h4>Processing Error</h4><div>${message}</div>`;
         errorInfo.style.display = 'block';
-        logMessage(`Processing failed: ${message}`, 'error');
     });
-
-    // Initialize logs
-    logMessage('Application initialized', 'info');
 });
