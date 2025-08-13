@@ -45,12 +45,11 @@
       "preload.js",
       "renderer.js",
       "index.html",
-      "client_secret.json",
       "assets/**/*",
       "node_modules/**/*",
       "package.json"
     ],
-    "extraFiles": [
+    "extraResources": [
       {
         "from": "client_secret.json",
         "to": "client_secret.json"
