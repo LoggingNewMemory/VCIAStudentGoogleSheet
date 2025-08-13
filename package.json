@@ -5,7 +5,7 @@
   "main": "main.js",
   "author": {
     "name": "Albert Wesley",
-    "email": "albert.wesley.dion@gmail.com",
+    "email": "your-email@example.com",
     "url": "https://github.com/LoggingNewMemory"
   },
   "homepage": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet",
@@ -60,15 +60,7 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64", "arm64"]
-        },
-        {
-          "target": "deb",
-          "arch": ["x64", "arm64"]
-        },
-        {
-          "target": "pacman",
-          "arch": ["x64", "arm64"]
+          "arch": ["x64"]
         }
       ],
       "category": "Education",
@@ -83,11 +75,11 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
+          "arch": ["x64"]
         },
         {
           "target": "portable",
-          "arch": ["x64", "ia32"]
+          "arch": ["x64"]
         }
       ],
       "icon": "assets/IconWindows.ico",
