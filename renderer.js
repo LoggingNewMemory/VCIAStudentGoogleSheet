@@ -1,10 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Element Constants ---
+    // --- Element References ---
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const testBtn = document.getElementById('test-btn');
     const processBtn = document.getElementById('process-btn');
-    const statusDiv = document.getElementById('status');
+    const statusMessage = document.getElementById('status-message');
     const loginSection = document.getElementById('login-section');
     const authenticatedSection = document.getElementById('authenticated-section');
     const spreadsheetIdInput = document.getElementById('spreadsheet-id-input');
@@ -14,8 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const postProcessingInfo = document.getElementById('post-processing-info');
     const movesPreview = document.getElementById('moves-preview');
     const movesList = document.getElementById('moves-list');
-    const userStatus = document.getElementById('user-status');
+    const authStatus = document.getElementById('auth-status');
     const username = document.getElementById('username');
+    const logsContainer = document.getElementById('logs-container');
     
     let pendingMoves = [];
 
@@ -26,6 +27,23 @@ document.addEventListener('DOMContentLoaded', () => {
         errorInfo.style.display = 'none';
         movesPreview.style.display = 'none';
         postProcessingInfo.style.display = 'none';
+    }
+
+    function updateStatusMessage(message, type = 'info') {
+        statusMessage.textContent = message;
+        statusMessage.className = `status-message ${type}`;
+    }
+
+    function logMessage(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+        
+        if (logsContainer.textContent === 'Initializing...') {
+            logsContainer.textContent = '';
+        }
+        
+        logsContainer.textContent += logEntry + '\n';
+        logsContainer.scrollTop = logsContainer.scrollHeight;
     }
 
     function extractSpreadsheetId(input) {
@@ -45,27 +63,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function updateUI(authenticated, spreadsheetId = '', name = '') {
+    function updateAuthStatus(authenticated, name = '') {
         if (authenticated) {
+            authStatus.textContent = '✓ Authenticated';
+            authStatus.className = 'status-indicator authenticated';
             loginSection.style.display = 'none';
             authenticatedSection.style.display = 'block';
-            userStatus.textContent = '✓ Logged in';
-                        
-            // **FIXED**: Always update the username. Use the provided name, or a default if none is available.
             username.textContent = name || 'User';
-            
-            if (spreadsheetId) {
-                spreadsheetIdInput.value = spreadsheetId;
-            }
+            logMessage('Successfully authenticated with Google', 'success');
         } else {
+            authStatus.textContent = 'Not Logged In';
+            authStatus.className = 'status-indicator unauthenticated';
             loginSection.style.display = 'block';
             authenticatedSection.style.display = 'none';
-            
-            userStatus.textContent = '';
+            username.textContent = 'User';
             hideAllInfoBoxes();
-            statusDiv.textContent = 'Please log in to continue.';
-            // Reset username text to its default placeholder on logout
-            username.textContent = '<Username>';
+            updateStatusMessage('Please sign in to continue');
+            logMessage('User logged out or session expired', 'info');
+        }
+    }
+
+    function setButtonState(button, loading = false, text = null) {
+        if (loading) {
+            button.disabled = true;
+            button.originalText = button.textContent;
+            button.textContent = text || 'Loading...';
+        } else {
+            button.disabled = false;
+            if (button.originalText) {
+                button.textContent = button.originalText;
+                delete button.originalText;
+            }
         }
     }
     
@@ -78,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update the input field to show just the ID for clarity
             spreadsheetIdInput.value = extractedId;
             window.electronAPI.saveSpreadsheetId(extractedId);
+            logMessage(`Spreadsheet ID saved: ${extractedId}`, 'info');
         } else if (input === '') {
             // Clear the saved ID if input is empty
             window.electronAPI.saveSpreadsheetId('');
@@ -93,18 +122,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (extractedId && extractedId !== input) {
                 spreadsheetIdInput.value = extractedId;
                 window.electronAPI.saveSpreadsheetId(extractedId);
+                logMessage(`Spreadsheet ID extracted from URL: ${extractedId}`, 'info');
             }
         }, 10);
     });
 
     loginBtn.addEventListener('click', () => {
-        statusDiv.textContent = 'Opening Google login in your browser...';
-        loginBtn.disabled = true;
+        updateStatusMessage('Opening Google sign-in...');
+        setButtonState(loginBtn, true, 'Signing In...');
+        logMessage('Initiating Google authentication', 'info');
         window.electronAPI.loginWithGoogle();
     });
 
     logoutBtn.addEventListener('click', () => {
-        statusDiv.textContent = 'Logging out...';
+        updateStatusMessage('Signing out...');
+        setButtonState(logoutBtn, true, 'Signing Out...');
+        logMessage('Logging out user', 'info');
         window.electronAPI.logout();
     });
 
@@ -113,7 +146,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const spreadsheetId = extractSpreadsheetId(input) || input;
         
         if (!spreadsheetId) {
-            statusDiv.textContent = 'Please enter a valid spreadsheet URL or ID.';
+            updateStatusMessage('Please enter a valid spreadsheet URL or ID');
+            errorInfo.innerHTML = '<h4>Invalid Input</h4><div>Please provide a valid Google Sheets URL or ID.</div>';
+            errorInfo.style.display = 'block';
             return;
         }
         
@@ -122,10 +157,11 @@ document.addEventListener('DOMContentLoaded', () => {
             spreadsheetIdInput.value = spreadsheetId;
         }
         
-        statusDiv.textContent = 'Testing spreadsheet access...';
+        updateStatusMessage('Testing spreadsheet access...');
         hideAllInfoBoxes();
         processBtn.style.display = 'none';
-        testBtn.disabled = true;
+        setButtonState(testBtn, true, 'Testing...');
+        logMessage(`Testing access to spreadsheet: ${spreadsheetId}`, 'info');
         window.electronAPI.testSpreadsheetAccess(spreadsheetId);
     });
 
@@ -134,59 +170,67 @@ document.addEventListener('DOMContentLoaded', () => {
         const spreadsheetId = extractSpreadsheetId(input) || input;
         
         if (pendingMoves.length === 0) {
-            statusDiv.textContent = 'No moves to process.';
+            updateStatusMessage('No moves to process');
             return;
         }
-        statusDiv.textContent = 'Processing spreadsheet... This may take a moment.';
-        processBtn.disabled = true;
-        testBtn.disabled = true;
+        
+        updateStatusMessage('Processing spreadsheet... This may take a moment');
+        setButtonState(processBtn, true, 'Processing...');
+        setButtonState(testBtn, true);
+        logMessage(`Processing ${pendingMoves.length} student moves`, 'info');
         window.electronAPI.processSpreadsheet(spreadsheetId);
     });
     
-    // --- Electron API Listeners ---
+    // --- Electron API Event Handlers ---
 
     window.electronAPI.receiveGoogleAuthCancelled(() => {
-    statusDiv.textContent = 'Login cancelled. You can try again.';
-    loginBtn.disabled = false;
-    
+        updateStatusMessage('Sign-in was cancelled. You can try again.');
+        setButtonState(loginBtn, false);
+        logMessage('Google authentication cancelled by user', 'warning');
     });
 
     window.electronAPI.receiveRestoreSession((data) => {
-        updateUI(data.authenticated, data.spreadsheetId, data.userName);
+        updateAuthStatus(data.authenticated, data.userName);
+        if (data.spreadsheetId) {
+            spreadsheetIdInput.value = data.spreadsheetId;
+            logMessage(`Session restored with spreadsheet: ${data.spreadsheetId}`, 'success');
+        }
     });
 
     window.electronAPI.receiveGoogleAuthSuccess((data) => {
-    statusDiv.textContent = data.message || 'Successfully authenticated with Google!';
-    updateUI(true, spreadsheetIdInput.value, data.userName);
-    loginBtn.disabled = false;
-    
+        updateStatusMessage('Successfully authenticated with Google!');
+        updateAuthStatus(true, data.userName);
+        setButtonState(loginBtn, false);
+        logMessage(`Authentication successful for user: ${data.userName}`, 'success');
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
-        statusDiv.textContent = `Error: ${message}`;
-        loginBtn.disabled = false;
-        
+        updateStatusMessage(`Authentication error: ${message}`);
+        setButtonState(loginBtn, false);
+        logMessage(`Authentication failed: ${message}`, 'error');
     });
 
     window.electronAPI.receiveLogoutComplete(() => {
-        statusDiv.textContent = 'Successfully logged out.';
-        updateUI(false);
+        updateStatusMessage('Successfully signed out');
+        updateAuthStatus(false);
+        setButtonState(logoutBtn, false);
     });
 
     window.electronAPI.receiveAuthExpired(() => {
-        statusDiv.textContent = 'Your session has expired. Please log in again.';
-        updateUI(false);
+        updateStatusMessage('Your session has expired. Please sign in again.');
+        updateAuthStatus(false);
+        logMessage('Session expired, user needs to re-authenticate', 'warning');
     });
 
     window.electronAPI.receiveTestAccessSuccess((data) => {
-        statusDiv.textContent = 'Spreadsheet access test successful!';
-        testBtn.disabled = false;
+        updateStatusMessage('Spreadsheet access verified successfully!');
+        setButtonState(testBtn, false);
         hideAllInfoBoxes();
         
         spreadsheetInfo.innerHTML = `
-            <strong>Title:</strong> ${data.title}<br>
-            <strong>Available Sheets:</strong>
-            <ul>${data.sheets.map(sheet => `<li>${sheet.title}</li>`).join('')}</ul>
+            <h4>✓ Spreadsheet Connected</h4>
+            <div><strong>Title:</strong> ${data.title}</div>
+            <div><strong>Available Sheets:</strong> ${data.sheets.map(sheet => sheet.title).join(', ')}</div>
         `;
         spreadsheetInfo.style.display = 'block';
 
@@ -194,43 +238,55 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingMoves = data.potentialMoves;
             let movesHtml = data.potentialMoves.map(move => `
                 <div class="move-item">
-                    <strong>${move.studentName}</strong> (Age ${move.age})<br>
-                    From: <em>${move.currentSheet}</em> → To: <em>${move.newSheet}</em>
+                    <div class="student-name">${move.studentName}</div>
+                    <div class="move-details">Age ${move.age} • From: ${move.currentSheet} → To: ${move.newSheet}</div>
                 </div>
             `).join('');
             
             movesList.innerHTML = movesHtml;
             movesPreview.style.display = 'block';
             processBtn.style.display = 'inline-block';
-            processBtn.disabled = false; 
-            statusDiv.innerHTML = `Found <strong>${data.potentialMoves.length}</strong> student(s) to move. Ready to process.`;
+            setButtonState(processBtn, false);
+            updateStatusMessage(`Found ${data.potentialMoves.length} student(s) ready to move`);
+            logMessage(`Found ${data.potentialMoves.length} students needing to be moved`, 'info');
         } else {
             pendingMoves = [];
             processBtn.style.display = 'none';
-            statusDiv.textContent = 'All students are in their correct age groups!';
+            updateStatusMessage('All students are in their correct age groups!');
+            logMessage('No student moves required - all students in correct groups', 'success');
         }
     });
     
     window.electronAPI.receiveTestAccessExcelDetected(() => {
-        statusDiv.textContent = 'Excel format detected.';
-        testBtn.disabled = false;
+        updateStatusMessage('Excel format detected - please convert to Google Sheets');
+        setButtonState(testBtn, false);
         hideAllInfoBoxes();
-        warningInfo.innerHTML = '<h4>⚠️ Excel Format Detected</h4><div>Please convert the file to Google Sheets format (File > Save as Google Sheets) and use the new Sheet ID.</div>';
+        warningInfo.innerHTML = `
+            <h4>⚠️ Excel Format Detected</h4>
+            <div>This appears to be an Excel file. Please convert it to Google Sheets format:</div>
+            <ol style="margin-left: 20px; margin-top: 8px;">
+                <li>Open the file in Google Sheets</li>
+                <li>Go to File → Save as Google Sheets</li>
+                <li>Use the new Google Sheets URL</li>
+            </ol>
+        `;
         warningInfo.style.display = 'block';
+        logMessage('Excel format detected, conversion required', 'warning');
     });
 
     window.electronAPI.receiveTestAccessError((message) => {
-        statusDiv.textContent = 'Spreadsheet access test failed.';
-        testBtn.disabled = false;
+        updateStatusMessage('Failed to access spreadsheet');
+        setButtonState(testBtn, false);
         hideAllInfoBoxes();
-        errorInfo.innerHTML = `<h4>Error:</h4><div>${message}</div>`;
+        errorInfo.innerHTML = `<h4>Access Error</h4><div>${message}</div>`;
         errorInfo.style.display = 'block';
+        logMessage(`Spreadsheet access error: ${message}`, 'error');
     });
 
     window.electronAPI.receiveProcessingComplete((message) => {
-        statusDiv.innerHTML = `<strong>Processing completed successfully!</strong>`;
+        updateStatusMessage('Processing completed successfully!');
         processBtn.style.display = 'none';
-        testBtn.disabled = false;
+        setButtonState(testBtn, false);
         hideAllInfoBoxes();
         
         const input = spreadsheetIdInput.value.trim();
@@ -238,26 +294,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/`;
 
         postProcessingInfo.innerHTML = `
-            <h4>Undo Instructions</h4>
-            <p>${message}</p>
-            <p><strong>To revert this change, use Google Sheets' built-in "Version History" feature.</strong></p>
-            <ol style="text-align: left; padding-left: 25px;">
-                <li><a href="${spreadsheetUrl}" target="_blank">Click here to open your Google Sheet.</a></li>
-                <li>In the Google Sheet, go to <strong>File > Version history > See version history</strong>.</li>
-                <li>Select the version from just before the changes were made.</li>
-                <li>Click the green "Restore this version" button at the top.</li>
+            <h4>✅ Processing Complete</h4>
+            <div style="margin-bottom: 16px;">${message}</div>
+            <div><strong>Need to undo?</strong> Use Google Sheets' Version History:</div>
+            <ol style="margin-left: 20px; margin-top: 8px;">
+                <li><a href="${spreadsheetUrl}" target="_blank" style="color: #3b82f6;">Open your Google Sheet</a></li>
+                <li>Go to <strong>File → Version history → See version history</strong></li>
+                <li>Select the version from before the changes</li>
+                <li>Click <strong>"Restore this version"</strong></li>
             </ol>
         `;
         postProcessingInfo.style.display = 'block';
+        logMessage(`Processing completed: ${message}`, 'success');
     });
 
     window.electronAPI.receiveProcessingError((message) => {
-        statusDiv.textContent = 'Processing failed.';
+        updateStatusMessage('Processing failed');
         processBtn.style.display = 'inline-block';
-        processBtn.disabled = false;
-        testBtn.disabled = false;
+        setButtonState(processBtn, false);
+        setButtonState(testBtn, false);
         hideAllInfoBoxes();
-        errorInfo.innerHTML = `<h4>Error:</h4><div>${message}</div>`;
+        errorInfo.innerHTML = `<h4>Processing Error</h4><div>${message}</div>`;
         errorInfo.style.display = 'block';
+        logMessage(`Processing failed: ${message}`, 'error');
     });
+
+    // Initialize logs
+    logMessage('Application initialized', 'info');
 });
