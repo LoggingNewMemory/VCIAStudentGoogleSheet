@@ -48,7 +48,7 @@
 
         .container {
             width: 1280px;
-            height: 720px;
+            height: 650px;
             display: flex;
             align-items: stretch;
             gap: 40px;
@@ -124,9 +124,10 @@
         }
 
         .login-section h1 {
-            font-size: 48px;
-            font-weight: 700;
+            font-size: 35px;
+            font-weight: 400;
             color: #1a1a1a;
+            padding-bottom: 10px;
         }
 
         .login-section h1 .google {
@@ -141,9 +142,9 @@
             color: white;
             border: none;
             border-radius: 15px;
-            padding: 15px 60px;
-            font-size: 24px;
-            font-weight: 600;
+            padding: 15px 200px;
+            font-size: 18px;
+            font-weight: 300;
             cursor: pointer;
             transition: all 0.3s ease;
             box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
@@ -409,22 +410,10 @@
             <div class="login-section" id="login-section">
                 <h1>Login With <span class="google">Google</span></h1>
                 <button class="login-btn" id="login-btn">LOGIN HERE</button>
-                
-                <div class="login-instructions" id="login-instructions" style="display: none;">
-                    <p style="margin: 20px 0; color: #666; font-size: 16px;">
-                        <strong>Login Instructions:</strong><br>
-                        1. Click "LOGIN HERE" above<br>
-                        2. A browser window will open with Google's authorization page<br>
-                        3. Sign in and grant permissions<br>
-                        4. The window will close automatically when complete
-                    </p>
-                </div>
             </div>
 
             <!-- Authenticated Section -->
             <div class="authenticated-section" id="authenticated-section">
-                <div id="user-status"></div>
-                <div id="status">Please log in to continue.</div>
                 
                 <div class="greeting">
                     Shalom, <span class="username" id="username">&lt;Username&gt;</span>

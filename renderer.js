@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const movesPreview = document.getElementById('moves-preview');
     const movesList = document.getElementById('moves-list');
     const userStatus = document.getElementById('user-status');
-    const loginInstructions = document.getElementById('login-instructions');
     const username = document.getElementById('username');
     
     let pendingMoves = [];
@@ -51,8 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loginSection.style.display = 'none';
             authenticatedSection.style.display = 'block';
             userStatus.textContent = '✓ Logged in';
-            statusDiv.textContent = 'Ready to work with spreadsheets!';
-            
+                        
             // **FIXED**: Always update the username. Use the provided name, or a default if none is available.
             username.textContent = name || 'User';
             
@@ -62,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             loginSection.style.display = 'block';
             authenticatedSection.style.display = 'none';
-            loginInstructions.style.display = 'none';
+            
             userStatus.textContent = '';
             hideAllInfoBoxes();
             statusDiv.textContent = 'Please log in to continue.';
@@ -102,7 +100,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loginBtn.addEventListener('click', () => {
         statusDiv.textContent = 'Opening Google login in your browser...';
         loginBtn.disabled = true;
-        loginInstructions.style.display = 'block';
         window.electronAPI.loginWithGoogle();
     });
 
@@ -151,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.electronAPI.receiveGoogleAuthCancelled(() => {
     statusDiv.textContent = 'Login cancelled. You can try again.';
     loginBtn.disabled = false;
-    loginInstructions.style.display = 'none';
+    
     });
 
     window.electronAPI.receiveRestoreSession((data) => {
@@ -162,13 +159,13 @@ document.addEventListener('DOMContentLoaded', () => {
     statusDiv.textContent = data.message || 'Successfully authenticated with Google!';
     updateUI(true, spreadsheetIdInput.value, data.userName);
     loginBtn.disabled = false;
-    loginInstructions.style.display = 'none';
+    
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
         statusDiv.textContent = `Error: ${message}`;
         loginBtn.disabled = false;
-        loginInstructions.style.display = 'none';
+        
     });
 
     window.electronAPI.receiveLogoutComplete(() => {
