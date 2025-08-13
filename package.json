@@ -44,7 +44,7 @@
       "preload.js",
       "renderer.js",
       "index.html",
-      "assets/*"    
+      "assets/*"
     ],
     "extraResources": [
       {
