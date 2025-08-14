@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const username = document.getElementById('username');
     
     let pendingMoves = [];
+    let authInProgress = false;
 
     // --- Utility Functions ---
     function hideAllInfoBoxes() {
@@ -81,6 +82,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    function showAuthInstructions() {
+        updateStatusMessage('Opening your default browser for secure sign-in...');
+        hideAllInfoBoxes();
+        
+        warningInfo.innerHTML = `
+            <h4>🌐 Browser Authentication</h4>
+            <div style="margin-bottom: 12px;">Your default browser should now be opening for secure Google sign-in.</div>
+            <div style="margin-bottom: 12px;"><strong>If the browser didn't open:</strong></div>
+            <ol style="margin-left: 20px; margin-bottom: 12px;">
+                <li>Check if a new browser tab/window opened</li>
+                <li>Look for any browser permission prompts</li>
+                <li>Make sure your default browser is set correctly</li>
+            </ol>
+            <div style="margin-bottom: 12px;"><strong>After signing in:</strong></div>
+            <ul style="margin-left: 20px;">
+                <li>Complete the Google authorization process</li>
+                <li>You'll see a success message in the browser</li>
+                <li>Return to this application</li>
+            </ul>
+        `;
+        warningInfo.style.display = 'block';
+    }
+
+    function hideAuthInstructions() {
+        if (warningInfo.innerHTML.includes('Browser Authentication')) {
+            warningInfo.style.display = 'none';
+        }
+    }
     
     // --- Event Listeners ---
     spreadsheetIdInput.addEventListener('input', () => {
@@ -111,8 +141,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loginBtn.addEventListener('click', () => {
-        updateStatusMessage('Opening Google sign-in...');
-        setButtonState(loginBtn, true, 'Signing In...');
+        if (authInProgress) return; // Prevent multiple clicks
+        
+        authInProgress = true;
+        setButtonState(loginBtn, true, 'Opening Browser...');
+        showAuthInstructions();
         window.electronAPI.loginWithGoogle();
     });
 
@@ -163,8 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Electron API Event Handlers ---
 
     window.electronAPI.receiveGoogleAuthCancelled(() => {
+        authInProgress = false;
         updateStatusMessage('Sign-in was cancelled. You can try again.');
         setButtonState(loginBtn, false);
+        hideAuthInstructions();
     });
 
     window.electronAPI.receiveRestoreSession((data) => {
@@ -175,14 +210,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.electronAPI.receiveGoogleAuthSuccess((data) => {
+        authInProgress = false;
         updateStatusMessage('Successfully authenticated with Google!');
         updateAuthStatus(true, data.userName);
         setButtonState(loginBtn, false);
+        hideAuthInstructions();
     });
 
     window.electronAPI.receiveGoogleAuthError((message) => {
-        updateStatusMessage(`Authentication error: ${message}`);
+        authInProgress = false;
+        updateStatusMessage(`Authentication failed: ${message}`);
         setButtonState(loginBtn, false);
+        hideAuthInstructions();
+        
+        // Show specific error information
+        errorInfo.innerHTML = `
+            <h4>Authentication Error</h4>
+            <div style="margin-bottom: 12px;">${message}</div>
+            <div><strong>Common solutions:</strong></div>
+            <ul style="margin-left: 20px;">
+                <li>Make sure port 8080 is not blocked by firewall</li>
+                <li>Close any other applications using port 8080</li>
+                <li>Check your default browser settings</li>
+                <li>Try again after a few moments</li>
+            </ul>
+        `;
+        errorInfo.style.display = 'block';
     });
 
     window.electronAPI.receiveLogoutComplete(() => {

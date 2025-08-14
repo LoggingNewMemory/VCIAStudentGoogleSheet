@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { google } = require('googleapis');
@@ -7,7 +7,6 @@ const url = require('url');
 
 // Global reference
 let mainWindow;
-let authWindow;
 let authServer;
 
 // File paths for storing persistent data
@@ -142,10 +141,64 @@ function createAuthServer() {
                 res.writeHead(200, {'Content-Type': 'text/html'});
                 res.end(`
                     <html>
+                        <head>
+                            <title>Authorization Successful</title>
+                            <style>
+                                body {
+                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                    min-height: 100vh;
+                                    margin: 0;
+                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                }
+                                .container {
+                                    background: white;
+                                    padding: 40px;
+                                    border-radius: 20px;
+                                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+                                    text-align: center;
+                                    max-width: 400px;
+                                }
+                                .success-icon {
+                                    font-size: 48px;
+                                    color: #10b981;
+                                    margin-bottom: 16px;
+                                }
+                                h1 {
+                                    color: #1a1a1a;
+                                    margin-bottom: 16px;
+                                    font-size: 24px;
+                                }
+                                p {
+                                    color: #666;
+                                    margin-bottom: 24px;
+                                }
+                                .close-btn {
+                                    background: linear-gradient(135deg, #667eea, #764ba2);
+                                    color: white;
+                                    border: none;
+                                    padding: 12px 24px;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-size: 16px;
+                                }
+                            </style>
+                        </head>
                         <body>
-                            <h1>Authorization Successful!</h1>
-                            <p>You can close this window and return to the application.</p>
-                            <script>window.close();</script>
+                            <div class="container">
+                                <div class="success-icon">✓</div>
+                                <h1>Authorization Successful!</h1>
+                                <p>You have successfully signed in to your Google account. You can now close this window and return to the Student Spreadsheet Manager.</p>
+                                <button class="close-btn" onclick="window.close()">Close Window</button>
+                            </div>
+                            <script>
+                                // Auto-close after 5 seconds if the button doesn't work
+                                setTimeout(() => {
+                                    window.close();
+                                }, 5000);
+                            </script>
                         </body>
                     </html>
                 `);
@@ -157,10 +210,59 @@ function createAuthServer() {
                 res.writeHead(400, {'Content-Type': 'text/html'});
                 res.end(`
                     <html>
+                        <head>
+                            <title>Authorization Failed</title>
+                            <style>
+                                body {
+                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                    min-height: 100vh;
+                                    margin: 0;
+                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                }
+                                .container {
+                                    background: white;
+                                    padding: 40px;
+                                    border-radius: 20px;
+                                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+                                    text-align: center;
+                                    max-width: 400px;
+                                }
+                                .error-icon {
+                                    font-size: 48px;
+                                    color: #ef4444;
+                                    margin-bottom: 16px;
+                                }
+                                h1 {
+                                    color: #1a1a1a;
+                                    margin-bottom: 16px;
+                                    font-size: 24px;
+                                }
+                                p {
+                                    color: #666;
+                                    margin-bottom: 24px;
+                                }
+                                .close-btn {
+                                    background: #ef4444;
+                                    color: white;
+                                    border: none;
+                                    padding: 12px 24px;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-size: 16px;
+                                }
+                            </style>
+                        </head>
                         <body>
-                            <h1>Authorization Failed</h1>
-                            <p>Error: ${query.error}</p>
-                            <p>You can close this window and try again.</p>
+                            <div class="container">
+                                <div class="error-icon">✗</div>
+                                <h1>Authorization Failed</h1>
+                                <p>Error: ${query.error}</p>
+                                <p>You can close this window and try signing in again.</p>
+                                <button class="close-btn" onclick="window.close()">Close Window</button>
+                            </div>
                         </body>
                     </html>
                 `);
@@ -174,12 +276,20 @@ function createAuthServer() {
             }
         });
         
-        server.listen(8080, 'localhost', () => {
+        server.listen(8080, 'localhost', (err) => {
+            if (err) {
+                reject(err);
+                return;
+            }
             console.log('Auth server listening on http://localhost:8080');
         });
         
         server.on('error', (err) => {
-            reject(err);
+            if (err.code === 'EADDRINUSE') {
+                reject(new Error('Port 8080 is already in use. Please close any other applications using this port and try again.'));
+            } else {
+                reject(err);
+            }
         });
         
         // Store server reference for cleanup
@@ -205,7 +315,7 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url);
+    shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -235,6 +345,7 @@ app.on('window-all-closed', () => {
     // Clean up auth server if it exists
     if (authServer) {
         authServer.close();
+        authServer = null;
     }
     if (process.platform !== 'darwin') app.quit(); 
 });
@@ -420,6 +531,7 @@ async function autoCorrectNumbering(spreadsheetId) {
 // --- IPC Handlers ---
 ipcMain.on('login-with-google', async () => {
     try {
+        // Generate the authorization URL
         const authUrl = oAuth2Client.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
@@ -433,43 +545,35 @@ ipcMain.on('login-with-google', async () => {
         }
 
         // Create and start the auth server
-        const authCodePromise = createAuthServer();
+        let authCodePromise;
+        try {
+            authCodePromise = createAuthServer();
+        } catch (serverError) {
+            console.error('Error creating auth server:', serverError);
+            mainWindow.webContents.send('google-auth-error', serverError.message || 'Failed to start local server for authentication.');
+            return;
+        }
         
-        // Open the auth URL in a browser window
-        authWindow = new BrowserWindow({ 
-            width: 600, 
-            height: 800, 
-            webPreferences: { 
-                nodeIntegration: false, 
-                contextIsolation: true 
-            } 
-        });
-        
-        authWindow.loadURL(authUrl);
-        
-        // Handle auth window being closed manually
-        authWindow.on('closed', () => { 
-            console.log('Auth window was closed');
-            authWindow = null;
-            
-            // Clean up auth server
+        // Open the auth URL in the system's default browser
+        try {
+            await shell.openExternal(authUrl);
+            console.log('Opened authorization URL in system browser');
+        } catch (browserError) {
+            console.error('Error opening browser:', browserError);
+            // Clean up server since we can't open the browser
             if (authServer) {
                 authServer.close();
                 authServer = null;
             }
-            
-            // Re-enable login button and hide instructions
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('google-auth-cancelled');
-            }
-        });
+            mainWindow.webContents.send('google-auth-error', 'Failed to open system browser. Please try again.');
+            return;
+        }
 
+        // Wait for the authorization code
         try {
             const code = await authCodePromise;
-            if (authWindow) {
-                authWindow.close();
-                authWindow = null;
-            }
+            
+            // Exchange the code for tokens
             const { tokens } = await oAuth2Client.getToken(code);
             oAuth2Client.setCredentials(tokens);
             saveTokens(tokens);
@@ -493,14 +597,7 @@ ipcMain.on('login-with-google', async () => {
 
         } catch (authError) {
             console.error('Error during authorization:', authError);
-            
-            // Clean up auth window if still open
-            if (authWindow) {
-                authWindow.close();
-                authWindow = null;
-            }
-            
-            mainWindow.webContents.send('google-auth-error', 'Error during authorization. Please try again.');
+            mainWindow.webContents.send('google-auth-error', 'Authorization failed. Please try again.');
         }
         
     } catch (error) {
@@ -508,9 +605,6 @@ ipcMain.on('login-with-google', async () => {
         mainWindow.webContents.send('google-auth-error', 'Error starting authorization process.');
     }
 });
-
-// Remove the old submit-auth-code handler as it's no longer needed
-// ipcMain.on('submit-auth-code', async (event, code) => { ... });
 
 ipcMain.on('logout', () => {
     clearTokens();
