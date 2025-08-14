@@ -16,8 +16,7 @@
     "start": "electron .",
     "dist": "electron-builder --linux",
     "dist:win": "electron-builder --windows",
-    "dist:mac": "electron-builder --mac",
-    "dist:all": "electron-builder --linux --windows --mac"
+    "dist:all": "electron-builder --linux --windows"
   },
   "build": {
     "appId": "com.albertwesley.vcia.ssm",
