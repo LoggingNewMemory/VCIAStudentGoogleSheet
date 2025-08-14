@@ -17,11 +17,24 @@ const TOKENS_FILE = path.join(app.getPath('userData'), 'tokens.json');
 // --- Google Auth Setup ---
 let credentials;
 try {
-    // Handle both development and production (ASAR) paths
+    // Handle both development and production paths
     let secretPath;
+    
     if (app.isPackaged) {
-        // In production, the file should be in the same directory as the executable
-        secretPath = path.join(process.resourcesPath, 'client_secret.json');
+        // In production (packaged), check multiple possible locations
+        const possiblePaths = [
+            path.join(__dirname, 'client_secret.json'),                    // Same directory as main.js
+            path.join(process.resourcesPath, 'client_secret.json'),        // Resources directory
+            path.join(process.resourcesPath, 'app', 'client_secret.json'), // Inside app directory
+            path.join(app.getAppPath(), 'client_secret.json'),             // App path
+        ];
+        
+        // Find the first path that exists
+        secretPath = possiblePaths.find(p => fs.existsSync(p));
+        
+        if (!secretPath) {
+            throw new Error(`client_secret.json not found in any of these locations:\n${possiblePaths.join('\n')}`);
+        }
     } else {
         // In development, use the current directory
         secretPath = path.join(__dirname, 'client_secret.json');
@@ -30,25 +43,17 @@ try {
     console.log('Looking for client_secret.json at:', secretPath);
     
     if (!fs.existsSync(secretPath)) {
-        console.error(`client_secret.json not found at ${secretPath}`);
-        // Show error dialog to user instead of just quitting
-        const { dialog } = require('electron');
-        app.whenReady().then(() => {
-            dialog.showErrorBox(
-                'Configuration Error',
-                `Google API credentials file (client_secret.json) not found.\n\nExpected location: ${secretPath}\n\nPlease ensure the client_secret.json file is included with the application.`
-            );
-            app.quit();
-        });
-        return; // Exit early but don't quit yet to allow dialog to show
+        throw new Error(`client_secret.json not found at ${secretPath}`);
     }
     
-    const content = fs.readFileSync(secretPath);
+    const content = fs.readFileSync(secretPath, 'utf8');
     credentials = JSON.parse(content).installed;
     
     if (!credentials || !credentials.client_id || !credentials.client_secret) {
-        throw new Error('Invalid client_secret.json format');
+        throw new Error('Invalid client_secret.json format - missing required fields');
     }
+    
+    console.log('Successfully loaded Google API credentials from:', secretPath);
     
 } catch (err) {
     console.error('Error loading client_secret.json:', err);
@@ -56,7 +61,7 @@ try {
     app.whenReady().then(() => {
         dialog.showErrorBox(
             'Configuration Error',
-            `Error loading Google API credentials:\n\n${err.message}\n\nPlease ensure the client_secret.json file is valid and properly formatted.`
+            `Error loading Google API credentials:\n\n${err.message}\n\nPlease ensure the client_secret.json file is included with the application.`
         );
         app.quit();
     });

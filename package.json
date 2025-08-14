@@ -25,11 +25,17 @@
     "asar": true,
     "files": [
       "main.js",
-      "preload.js",
+      "preload.js", 
       "renderer.js",
       "index.html",
-      "assets/*",
-      "client_secret.json"
+      "assets/**/*",
+      "logo/*"
+    ],
+    "extraResources": [
+      {
+        "from": "client_secret.json",
+        "to": "client_secret.json"
+      }
     ],
     "linux": {
       "target": [
@@ -38,14 +44,14 @@
         "pacman"
       ],
       "category": "Education",
-      "icon": "assets/IconLinux.png"
+      "icon": "logo/linux.png"
     },
     "win": {
       "target": [
         "portable",
         "nsis"
       ],
-      "icon": "assets/IconWindows.ico"
+      "icon": "logo/windows.ico"
     }
   }
 }
