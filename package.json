@@ -1,115 +1,51 @@
 {
+  "main": "main.js",
   "name": "vcia-ssm",
   "version": "1.0.0",
   "description": "VCIA Student Spreadsheet Manager",
-  "main": "main.js",
-  "author": {
-    "name": "Albert Wesley",
-    "email": "albert.wesley.dion@gmail.com",
-    "url": "https://github.com/LoggingNewMemory"
-  },
+  "author": "Albert Wesley <albert.wesley.dion@gmail.com>",
   "homepage": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/LoggingNewMemory/VCIAStudentGoogleSheet.git"
+  "devDependencies": {
+    "electron": "^35.6.0",
+    "electron-builder": "^26.0.12"
   },
-  "keywords": [
-    "electron",
-    "google-sheets",
-    "student-management",
-    "education",
-    "spreadsheet",
-    "automation"
-  ],
-  "license": "MIT",
+  "dependencies": {
+    "googleapis": "^134.0.0"
+  },
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --inspect",
-    "build": "electron-builder",
-    "build-linux": "electron-builder --linux AppImage deb pacman",
-    "build-win": "electron-builder --win",
-    "build-all": "electron-builder --linux --win",
-    "dist": "npm run build",
-    "clean": "rimraf dist",
-    "postinstall": "electron-builder install-app-deps"
+    "dist": "electron-builder --linux",
+    "dist:win": "electron-builder --windows",
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "electron-builder --linux --windows --mac"
   },
   "build": {
-    "appId": "victory-ssm",
+    "appId": "com.albertwesley.vcia.ssm",
     "productName": "Victory SSM",
-    "directories": {
-      "output": "dist"
-    },
+    "asar": true,
     "files": [
       "main.js",
       "preload.js",
       "renderer.js",
       "index.html",
-      "assets/*"
-    ],
-    "extraResources": [
-      {
-        "from": "client_secret.json",
-        "to": "client_secret.json"
-      }
+      "assets/*",
+      "client_secret.json"
     ],
     "linux": {
       "target": [
-        {
-          "target": "AppImage",
-          "arch": ["x64"]
-        },
-        {
-          "target": "deb",
-          "arch": ["x64"]
-        },
-        {
-          "target": "pacman",
-          "arch": ["x64"]
-        }
+        "AppImage",
+        "deb",
+        "pacman"
       ],
       "category": "Education",
-      "icon": "assets/IconLinux.png",
-      "desktop": {
-        "Name": "Victory SSM",
-        "Comment": "VCIA Student Spreadsheet Manager",
-        "Keywords": "education;spreadsheet;students;google-sheets;"
-      }
+      "icon": "assets/IconLinux.png"
     },
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
+        "portable",
+        "nsis"
       ],
-      "icon": "assets/IconWindows.ico",
-      "requestedExecutionLevel": "asInvoker"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Victory Student Manager"
+      "icon": "assets/IconWindows.ico"
     }
-
-  },
-  "engines": {
-    "node": ">=16.0.0",
-    "npm": ">=8.0.0"
-  },
-  "devDependencies": {
-    "electron": "^28.3.3",
-    "electron-builder": "^24.13.3",
-    "rimraf": "^5.0.5"
-  },
-  "dependencies": {
-    "googleapis": "^134.0.0"
   }
 }
