@@ -136,68 +136,21 @@ function createAuthServer() {
         const server = http.createServer((req, res) => {
             const query = url.parse(req.url, true).query;
             
-            if (query.code) {
+           if (query.code) {
                 // Success - got the authorization code
                 res.writeHead(200, {'Content-Type': 'text/html'});
                 res.end(`
                     <html>
                         <head>
-                            <title>Authorization Successful</title>
-                            <style>
-                                body {
-                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                                    display: flex;
-                                    justify-content: center;
-                                    align-items: center;
-                                    min-height: 100vh;
-                                    margin: 0;
-                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                }
-                                .container {
-                                    background: white;
-                                    padding: 40px;
-                                    border-radius: 20px;
-                                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-                                    text-align: center;
-                                    max-width: 400px;
-                                }
-                                .success-icon {
-                                    font-size: 48px;
-                                    color: #10b981;
-                                    margin-bottom: 16px;
-                                }
-                                h1 {
-                                    color: #1a1a1a;
-                                    margin-bottom: 16px;
-                                    font-size: 24px;
-                                }
-                                p {
-                                    color: #666;
-                                    margin-bottom: 24px;
-                                }
-                                .close-btn {
-                                    background: linear-gradient(135deg, #667eea, #764ba2);
-                                    color: white;
-                                    border: none;
-                                    padding: 12px 24px;
-                                    border-radius: 8px;
-                                    cursor: pointer;
-                                    font-size: 16px;
-                                }
-                            </style>
+                            <title>Authorization Complete</title>
                         </head>
                         <body>
-                            <div class="container">
-                                <div class="success-icon">✓</div>
-                                <h1>Authorization Successful!</h1>
-                                <p>You have successfully signed in to your Google account. You can now close this window and return to the Student Spreadsheet Manager.</p>
-                                <button class="close-btn" onclick="window.close()">Close Window</button>
-                            </div>
+                            <h1>Authorization Ok, Return to the app</h1>
                             <script>
-                                // Auto-close after 5 seconds if the button doesn't work
+                                // Auto-close after 3 seconds
                                 setTimeout(() => {
                                     window.close();
-                                }, 5000);
+                                }, 3000);
                             </script>
                         </body>
                     </html>
@@ -205,64 +158,24 @@ function createAuthServer() {
                 
                 server.close();
                 resolve(query.code);
-            } else if (query.error) {
+            }
+            else if (query.error) {
                 // Error in authorization
                 res.writeHead(400, {'Content-Type': 'text/html'});
+                // Replace the success response HTML in main.js createAuthServer function with this:
                 res.end(`
                     <html>
                         <head>
-                            <title>Authorization Failed</title>
-                            <style>
-                                body {
-                                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                                    display: flex;
-                                    justify-content: center;
-                                    align-items: center;
-                                    min-height: 100vh;
-                                    margin: 0;
-                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                }
-                                .container {
-                                    background: white;
-                                    padding: 40px;
-                                    border-radius: 20px;
-                                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-                                    text-align: center;
-                                    max-width: 400px;
-                                }
-                                .error-icon {
-                                    font-size: 48px;
-                                    color: #ef4444;
-                                    margin-bottom: 16px;
-                                }
-                                h1 {
-                                    color: #1a1a1a;
-                                    margin-bottom: 16px;
-                                    font-size: 24px;
-                                }
-                                p {
-                                    color: #666;
-                                    margin-bottom: 24px;
-                                }
-                                .close-btn {
-                                    background: #ef4444;
-                                    color: white;
-                                    border: none;
-                                    padding: 12px 24px;
-                                    border-radius: 8px;
-                                    cursor: pointer;
-                                    font-size: 16px;
-                                }
-                            </style>
+                            <title>Authorization Complete</title>
                         </head>
                         <body>
-                            <div class="container">
-                                <div class="error-icon">✗</div>
-                                <h1>Authorization Failed</h1>
-                                <p>Error: ${query.error}</p>
-                                <p>You can close this window and try signing in again.</p>
-                                <button class="close-btn" onclick="window.close()">Close Window</button>
-                            </div>
+                            <h1>Authorization Ok, Return to the app</h1>
+                            <script>
+                                // Auto-close after 3 seconds
+                                setTimeout(() => {
+                                    window.close();
+                                }, 3000);
+                            </script>
                         </body>
                     </html>
                 `);
